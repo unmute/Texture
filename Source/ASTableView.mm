@@ -548,7 +548,7 @@ static NSString * const kCellReuseIdentifier = @"_ASTableViewCell";
 {
   ASDisplayNodeAssertMainThread();
   [self reloadData];
-  [_dataController waitUntilAllUpdatesAreCommitted];
+  [_dataController waitUntilAllUpdatesAreProcessed];
 }
 
 - (void)scrollToRowAtIndexPath:(NSIndexPath *)indexPath atScrollPosition:(UITableViewScrollPosition)scrollPosition animated:(BOOL)animated
@@ -735,6 +735,16 @@ static NSString * const kCellReuseIdentifier = @"_ASTableViewCell";
   } 
 }
 
+- (BOOL)isProcessingUpdates
+{
+  return [_dataController isProcessingUpdates];
+}
+
+- (void)onDidFinishProcessingUpdates:(nullable void (^)())completion
+{
+  [_dataController onDidFinishProcessingUpdates:completion];
+}
+
 - (void)waitUntilAllUpdatesAreCommitted
 {
   ASDisplayNodeAssertMainThread();
@@ -743,15 +753,16 @@ static NSString * const kCellReuseIdentifier = @"_ASTableViewCell";
     //    ASDisplayNodeFailAssert(@"Should not call %@ during batch update", NSStringFromSelector(_cmd));
     return;
   }
-  
-  [_dataController waitUntilAllUpdatesAreCommitted];
+
+  [_dataController waitUntilAllUpdatesAreProcessed];
 }
 
 - (void)layoutSubviews
 {
   // Remeasure all rows if our row width has changed.
   _remeasuringCellNodes = YES;
-  CGFloat constrainedWidth = self.bounds.size.width - [self sectionIndexWidth];
+  UIEdgeInsets contentInset = self.contentInset;
+  CGFloat constrainedWidth = self.bounds.size.width - [self sectionIndexWidth] - contentInset.left - contentInset.right;
   if (constrainedWidth > 0 && _nodesConstrainedWidth != constrainedWidth) {
     _nodesConstrainedWidth = constrainedWidth;
 
