@@ -181,14 +181,6 @@ static NSString * const kRate = @"rate";
   if (self.image == nil && self.URL == nil) {
     [self generatePlaceholderImage];
   }
-
-  if (_delegateFlags.delegateVideoNodeDidPlayToTimeInterval) {
-    __weak __typeof(self) weakSelf = self;
-    _timeObserverInterval = CMTimeMake(1, _periodicTimeObserverTimescale);
-    _timeObserver = [_player addPeriodicTimeObserverForInterval:_timeObserverInterval queue:NULL usingBlock:^(CMTime time){
-      [weakSelf periodicTimeObserver:time];
-    }];
-  }
 }
 
 - (void)addPlayerItemObservers:(AVPlayerItem *)playerItem
@@ -233,10 +225,23 @@ static NSString * const kRate = @"rate";
   }
 
   [player addObserver:self forKeyPath:kRate options:NSKeyValueObservingOptionNew context:ASVideoNodeContext];
+
+  if (_delegateFlags.delegateVideoNodeDidPlayToTimeInterval) {
+      __weak __typeof(self) weakSelf = self;
+      _timeObserverInterval = CMTimeMake(1, _periodicTimeObserverTimescale);
+      _timeObserver = [_player addPeriodicTimeObserverForInterval:_timeObserverInterval queue:NULL usingBlock:^(CMTime time){
+          [weakSelf periodicTimeObserver:time];
+      }];
+  }
 }
 
 - (void) removePlayerObservers:(AVPlayer *)player
 {
+  if (_timeObserver != nil) {
+    [player removeTimeObserver:_timeObserver];
+    _timeObserver = nil;
+  }
+
   @try {
     [player removeObserver:self forKeyPath:kRate context:ASVideoNodeContext];
   }
@@ -838,11 +843,6 @@ static NSString * const kRate = @"rate";
 
 - (void)dealloc
 {
-  if (_timeObserver) {
-    [_player removeTimeObserver:_timeObserver];
-    _timeObserver = nil;
-  }
-  
   [self removePlayerItemObservers:_currentPlayerItem];
   [self removePlayerObservers:_player];
 
