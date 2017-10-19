@@ -1162,11 +1162,7 @@ static NSString * const kReuseIdentifier = @"_ASCollectionReuseIdentifier";
 - (void)collectionView:(UICollectionView *)collectionView willDisplayCell:(UICollectionViewCell *)rawCell forItemAtIndexPath:(NSIndexPath *)indexPath
 {
   if (_asyncDelegateFlags.interopWillDisplayCell) {
-    ASCellNode *node = [self nodeForItemAtIndexPath:indexPath];
-    NSIndexPath *modelIndexPath = [self indexPathForNode:node];
-    if (modelIndexPath && node.shouldUseUIKitCell) {
-      [(id <ASCollectionDelegateInterop>)_asyncDelegate collectionView:collectionView willDisplayCell:rawCell forItemAtIndexPath:modelIndexPath];
-    }
+    [(id <ASCollectionDelegateInterop>)_asyncDelegate collectionView:collectionView willDisplayCell:rawCell forItemAtIndexPath:indexPath];
   }
 
   _ASCollectionViewCell *cell = ASDynamicCastStrict(rawCell, _ASCollectionViewCell);
