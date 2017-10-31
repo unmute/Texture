@@ -49,7 +49,8 @@ Pod::Spec.new do |spec|
       pin.dependency 'PINRemoteImage/PINCache'
       pin.dependency 'Texture/Core'
       pin.dependency 'PINRemoteImage/WebP'
-			pin.dependency 'PINRemoteImage/FLAnimatedImage'
+			pin.dependency 'PINRemoteImage/FLAnimatedImage'      
+			pin.xcconfig = { 'GCC_PREPROCESSOR_DEFINITIONS' => '$(inherited) PIN_WEBP=1' }
   end
 
   spec.subspec 'IGListKit' do |igl|
