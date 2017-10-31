@@ -32,7 +32,7 @@
 #define PIN_ANIMATED_AVAILABLE 0
 #endif
 
-#if __has_include(<webp/decode.h>)
+#if __has_include (<PINRemoteImage/PINWebPAnimatedImage.h>)
 #define PIN_WEBP_AVAILABLE  1
 #else
 #define PIN_WEBP_AVAILABLE  0
