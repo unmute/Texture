@@ -50,7 +50,6 @@ Pod::Spec.new do |spec|
       pin.dependency 'Texture/Core'
       pin.dependency 'PINRemoteImage/WebP'
 			pin.dependency 'PINRemoteImage/FLAnimatedImage'
-      yoga.xcconfig = { 'GCC_PREPROCESSOR_DEFINITIONS' => '$(inherited) PIN_WEBP=1' }
   end
 
   spec.subspec 'IGListKit' do |igl|
