@@ -28,6 +28,7 @@
 #import <AsyncDisplayKit/ASDisplayNode+FrameworkSubclasses.h>
 #import <AsyncDisplayKit/ASHighlightOverlayLayer.h>
 #import <AsyncDisplayKit/ASDisplayNodeExtras.h>
+#import <AsyncDisplayKit/ASGraphicsContext.h>
 
 #import <AsyncDisplayKit/ASTextKitCoreTextAdditions.h>
 #import <AsyncDisplayKit/ASTextKitRenderer+Positioning.h>
@@ -229,6 +230,8 @@ static NSArray *DefaultLinkAttributeNames = @[ NSLinkAttributeName ];
 {
   CGColorRelease(_shadowColor);
 
+  // TODO: This may not be necessary post-iOS-9 when most UIKit assign APIs
+  // were changed to weak.
   if (_longPressGestureRecognizer) {
     _longPressGestureRecognizer.delegate = nil;
     [_longPressGestureRecognizer removeTarget:nil action:NULL];
@@ -539,7 +542,7 @@ static NSArray *DefaultLinkAttributeNames = @[ NSLinkAttributeName ];
 }
 
 - (id)_linkAttributeValueAtPoint:(CGPoint)point
-                   attributeName:(out NSString **)attributeNameOut
+                   attributeName:(out NSString * __autoreleasing *)attributeNameOut
                            range:(out NSRange *)rangeOut
    inAdditionalTruncationMessage:(out BOOL *)inAdditionalTruncationMessageOut
                  forHighlighting:(BOOL)highlighting
@@ -907,7 +910,7 @@ static CGRect ASTextNodeAdjustRenderRectForShadowPadding(CGRect rendererRect, UI
   
   ASDN::MutexLocker l(__instanceLock__);
   
-  UIGraphicsBeginImageContext(size);
+  ASGraphicsBeginImageContextWithOptions(size, NO, 1.0);
   [self.placeholderColor setFill];
 
   ASTextKitRenderer *renderer = [self _locked_renderer];
@@ -926,8 +929,7 @@ static CGRect ASTextNodeAdjustRenderRectForShadowPadding(CGRect rendererRect, UI
     }
   }
 
-  UIImage *image = UIGraphicsGetImageFromCurrentImageContext();
-  UIGraphicsEndImageContext();
+  UIImage *image = ASGraphicsGetImageAndEndCurrentContext();
   return image;
 }
 
@@ -1384,7 +1386,8 @@ static NSAttributedString *DefaultTruncationAttributedString()
 }
 #endif
 
-static ASDN::Mutex _experimentLock;
+// Allocate _experimentLock on the heap to prevent destruction at app exit (https://github.com/TextureGroup/Texture/issues/136)
+static ASDN::StaticMutex& _experimentLock = *new ASDN::StaticMutex;
 static ASTextNodeExperimentOptions _experimentOptions;
 static BOOL _hasAllocatedNode;
 
@@ -1392,7 +1395,7 @@ static BOOL _hasAllocatedNode;
 {
   static dispatch_once_t onceToken;
   dispatch_once(&onceToken, ^{
-    ASDN::MutexLocker lock(_experimentLock);
+    ASDN::StaticMutexLocker lock(_experimentLock);
     
     // They must call this before allocating any text nodes.
     ASDisplayNodeAssertFalse(_hasAllocatedNode);
@@ -1427,7 +1430,7 @@ static BOOL _hasAllocatedNode;
 {
   static dispatch_once_t onceToken;
   dispatch_once(&onceToken, ^{
-    ASDN::MutexLocker lock(_experimentLock);
+    ASDN::StaticMutexLocker lock(_experimentLock);
     _hasAllocatedNode = YES;
   });
   

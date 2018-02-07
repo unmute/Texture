@@ -1,6 +1,6 @@
 Pod::Spec.new do |spec|
   spec.name         = 'Texture'
-  spec.version      = '2.3.4'
+  spec.version      = '2.6'
   spec.license      =  { :type => 'BSD and Apache 2',  }
   spec.homepage     = 'http://texturegroup.org'
   spec.authors      = { 'Huy Nguyen' => 'huy@pinterest.com', 'Garrett Moon' => 'garrett@excitedpixel.com', 'Scott Goodson' => 'scottgoodson@gmail.com', 'Michael Schneider' => 'schneider@pinterest.com', 'Adlai Holler' => 'adlai@pinterest.com' }
@@ -14,7 +14,7 @@ Pod::Spec.new do |spec|
   spec.weak_frameworks = 'Photos','MapKit','AssetsLibrary'
   spec.requires_arc = true
 
-  spec.ios.deployment_target = '8.0'
+  spec.ios.deployment_target = '9.0'
 
   # Uncomment when fixed: issues with tvOS build for release 2.0
   # spec.tvos.deployment_target = '9.0'
@@ -45,7 +45,7 @@ Pod::Spec.new do |spec|
   end
   
   spec.subspec 'PINRemoteImage' do |pin|
-      pin.dependency 'PINRemoteImage/iOS', '= 3.0.0-beta.11'
+      pin.dependency 'PINRemoteImage/iOS', '= 3.0.0-beta.13'
       pin.dependency 'PINRemoteImage/PINCache'
       pin.dependency 'Texture/Core'
   end
@@ -57,7 +57,7 @@ Pod::Spec.new do |spec|
 
   spec.subspec 'Yoga' do |yoga|
       yoga.xcconfig = { 'GCC_PREPROCESSOR_DEFINITIONS' => '$(inherited) YOGA=1' }
-      yoga.dependency 'Yoga', '1.5.0'
+      yoga.dependency 'Yoga', '1.6.0'
       yoga.dependency 'Texture/Core'
   end
 
