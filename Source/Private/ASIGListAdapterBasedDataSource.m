@@ -87,9 +87,19 @@ typedef struct {
 
 #pragma mark - ASCollectionDelegate
 
+- (BOOL)collectionNode:(ASCollectionNode *)collectionNode shouldSelectItemAtIndexPath:(NSIndexPath *)indexPath
+{
+  return [self.delegate collectionView:collectionNode.view shouldSelectItemAtIndexPath:indexPath];
+}
+
 - (void)collectionNode:(ASCollectionNode *)collectionNode didSelectItemAtIndexPath:(NSIndexPath *)indexPath
 {
   [self.delegate collectionView:collectionNode.view didSelectItemAtIndexPath:indexPath];
+}
+
+- (void)collectionNode:(ASCollectionNode *)collectionNode didDeselectItemAtIndexPath:(NSIndexPath *)indexPath
+{
+  [self.delegate collectionView:collectionNode.view didDeselectItemAtIndexPath:indexPath];
 }
 
 - (void)scrollViewDidScroll:(UIScrollView *)scrollView
@@ -105,6 +115,11 @@ typedef struct {
 - (void)scrollViewDidEndDragging:(UIScrollView *)scrollView willDecelerate:(BOOL)decelerate
 {
   [self.delegate scrollViewDidEndDragging:scrollView willDecelerate:decelerate];
+}
+
+- (void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView
+{
+  [self.delegate scrollViewDidEndDecelerating:scrollView];
 }
 
 - (BOOL)shouldBatchFetchForCollectionNode:(ASCollectionNode *)collectionNode

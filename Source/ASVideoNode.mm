@@ -226,11 +226,13 @@ static NSString * const kRate = @"rate";
 
   [player addObserver:self forKeyPath:kRate options:NSKeyValueObservingOptionNew context:ASVideoNodeContext];
 
-  __weak __typeof(self) weakSelf = self;
-  _timeObserverInterval = CMTimeMake(1, _periodicTimeObserverTimescale);
-  _timeObserver = [player addPeriodicTimeObserverForInterval:_timeObserverInterval queue:NULL usingBlock:^(CMTime time){
-    [weakSelf periodicTimeObserver:time];
-  }];
+  if (_delegateFlags.delegateVideoNodeDidPlayToTimeInterval) {
+      __weak __typeof(self) weakSelf = self;
+      _timeObserverInterval = CMTimeMake(1, _periodicTimeObserverTimescale);
+      _timeObserver = [_player addPeriodicTimeObserverForInterval:_timeObserverInterval queue:NULL usingBlock:^(CMTime time){
+          [weakSelf periodicTimeObserver:time];
+      }];
+  }
 }
 
 - (void) removePlayerObservers:(AVPlayer *)player
