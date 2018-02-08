@@ -50,8 +50,7 @@
 
 @implementation ASPagerNodeTestController
 
-- (instancetype)initWithNibName:(NSString *)nibNameOrNil bundle:(NSBundle *)nibBundleOrNil
-{
+- (instancetype)initWithNibName:(NSString *)nibNameOrNil bundle:(NSBundle *)nibBundleOrNil {
   self = [super initWithNibName:nibNameOrNil bundle:nibBundleOrNil];
   if (self) {
     // Populate these immediately so that they're not unexpectedly nil during tests.
@@ -75,8 +74,7 @@
 
 @implementation ASPagerNodeTests
 
-- (void)testPagerReturnsIndexOfPages
-{
+- (void)testPagerReturnsIndexOfPages {
   ASPagerNodeTestController *testController = [self testController];
   
   ASCellNode *cellNode = [testController.pagerNode nodeForPageAtIndex:0];
@@ -84,8 +82,7 @@
   XCTAssertEqual([testController.pagerNode indexOfPageWithNode:cellNode], 0);
 }
 
-- (void)testPagerReturnsNotFoundForCellThatDontExistInPager
-{
+- (void)testPagerReturnsNotFoundForCellThatDontExistInPager {
   ASPagerNodeTestController *testController = [self testController];
 
   ASCellNode *badNode = [[ASCellNode alloc] init];
@@ -93,17 +90,7 @@
   XCTAssertEqual([testController.pagerNode indexOfPageWithNode:badNode], NSNotFound);
 }
 
-- (void)testScrollPageToIndex
-{
-  ASPagerNodeTestController *testController = [self testController];
-  testController.pagerNode.frame = CGRectMake(0, 0, 500, 500);
-  [testController.pagerNode scrollToPageAtIndex:1 animated:false];
-
-  XCTAssertEqual(testController.pagerNode.currentPageIndex, 1);
-}
-
-- (ASPagerNodeTestController *)testController
-{
+- (ASPagerNodeTestController *)testController {
   ASPagerNodeTestController *testController = [[ASPagerNodeTestController alloc] initWithNibName:nil bundle:nil];
   UIWindow *window = [[UIWindow alloc] initWithFrame:[[UIScreen mainScreen] bounds]];
   [window makeKeyAndVisible];

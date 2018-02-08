@@ -37,10 +37,10 @@
 
 @implementation ASTestDataController
 
-- (void)relayoutAllNodesWithInvalidationBlock:(nullable void (^)())invalidationBlock
+- (void)relayoutAllNodes
 {
   _numberOfAllNodesRelayouts++;
-  [super relayoutAllNodesWithInvalidationBlock:invalidationBlock];
+  [super relayoutAllNodes];
 }
 
 @end

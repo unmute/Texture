@@ -141,7 +141,7 @@ typedef struct {
   NSArray *accessibilityHeaderElements;
   CGPoint accessibilityActivationPoint;
   UIBezierPath *accessibilityPath;
-  UISemanticContentAttribute semanticContentAttribute API_AVAILABLE(ios(9.0), tvos(9.0));
+  UISemanticContentAttribute semanticContentAttribute;
 
   ASPendingStateFlags _flags;
 }
@@ -573,7 +573,7 @@ static BOOL defaultAllowsEdgeAntialiasing = NO;
   _flags.setAsyncTransactionContainer = YES;
 }
 
-- (void)setSemanticContentAttribute:(UISemanticContentAttribute)attribute API_AVAILABLE(ios(9.0), tvos(9.0)) {
+- (void)setSemanticContentAttribute:(UISemanticContentAttribute)attribute {
   semanticContentAttribute = attribute;
   _flags.setSemanticContentAttribute = YES;
 }
@@ -1216,13 +1216,11 @@ static BOOL defaultAllowsEdgeAntialiasing = NO;
   pendingState.accessibilityLabel = view.accessibilityLabel;
   pendingState.accessibilityHint = view.accessibilityHint;
   pendingState.accessibilityValue = view.accessibilityValue;
-#if __IPHONE_OS_VERSION_MAX_ALLOWED >= __IPHONE_11_0
-  if (AS_AVAILABLE_IOS(11)) {
-    pendingState.accessibilityAttributedLabel = view.accessibilityAttributedLabel;
-    pendingState.accessibilityAttributedHint = view.accessibilityAttributedHint;
-    pendingState.accessibilityAttributedValue = view.accessibilityAttributedValue;
+  if (AS_AT_LEAST_IOS11) {
+    pendingState.accessibilityAttributedLabel = [view valueForKey: @"accessibilityAttributedLabel"];
+    pendingState.accessibilityAttributedHint = [view valueForKey: @"accessibilityAttributedHint"];
+    pendingState.accessibilityAttributedValue = [view valueForKey: @"accessibilityAttributedValue"];
   }
-#endif
   pendingState.accessibilityTraits = view.accessibilityTraits;
   pendingState.accessibilityFrame = view.accessibilityFrame;
   pendingState.accessibilityLanguage = view.accessibilityLanguage;
