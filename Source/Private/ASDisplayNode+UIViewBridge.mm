@@ -185,30 +185,14 @@ if (shouldApply) { _layer.layerProperty = (layerValueExpr); } else { ASDisplayNo
 
 - (CGFloat)cornerRadius
 {
-  ASDN::MutexLocker l(__instanceLock__);
-  if (_cornerRoundingType == ASCornerRoundingTypeDefaultSlowCALayer) {
-    return self.layerCornerRadius;
-  } else {
-    return _cornerRadius;
-  }
+  _bridge_prologue_read;
+  return _getFromLayer(cornerRadius);
 }
 
 - (void)setCornerRadius:(CGFloat)newCornerRadius
 {
-  ASDN::MutexLocker l(__instanceLock__);
-  [self updateCornerRoundingWithType:_cornerRoundingType cornerRadius:newCornerRadius];
-}
-
-- (ASCornerRoundingType)cornerRoundingType
-{
-  ASDN::MutexLocker l(__instanceLock__);
-  return _cornerRoundingType;
-}
-
-- (void)setCornerRoundingType:(ASCornerRoundingType)newRoundingType
-{
-  ASDN::MutexLocker l(__instanceLock__);
-  [self updateCornerRoundingWithType:newRoundingType cornerRadius:_cornerRadius];
+  _bridge_prologue_write;
+  _setToLayer(cornerRadius, newCornerRadius);
 }
 
 - (NSString *)contentsGravity
@@ -854,35 +838,25 @@ if (shouldApply) { _layer.layerProperty = (layerValueExpr); } else { ASDisplayNo
 - (UISemanticContentAttribute)semanticContentAttribute
 {
   _bridge_prologue_read;
-  return _getFromViewOnly(semanticContentAttribute);
+  if (AS_AT_LEAST_IOS9) {
+    return _getFromViewOnly(semanticContentAttribute);
+  }
+  return UISemanticContentAttributeUnspecified;
 }
 
 - (void)setSemanticContentAttribute:(UISemanticContentAttribute)semanticContentAttribute
 {
   _bridge_prologue_write;
-  _setToViewOnly(semanticContentAttribute, semanticContentAttribute);
+  if (AS_AT_LEAST_IOS9) {
+    _setToViewOnly(semanticContentAttribute, semanticContentAttribute);
 #if YOGA
-  [self semanticContentAttributeDidChange:semanticContentAttribute];
+    [self semanticContentAttributeDidChange:semanticContentAttribute];
 #endif
+  }
 }
 
 @end
 
-@implementation ASDisplayNode (InternalPropertyBridge)
-
-- (CGFloat)layerCornerRadius
-{
-  _bridge_prologue_read;
-  return _getFromLayer(cornerRadius);
-}
-
-- (void)setLayerCornerRadius:(CGFloat)newLayerCornerRadius
-{
-  _bridge_prologue_write;
-  _setToLayer(cornerRadius, newLayerCornerRadius);
-}
-
-@end
 
 #pragma mark - UIViewBridgeAccessibility
 
@@ -904,13 +878,6 @@ if (shouldApply) { _layer.layerProperty = (layerValueExpr); } else { ASDisplayNo
 nodeProperty = nodeValueExpr; _setToViewOnly(viewAndPendingViewStateProperty, viewAndPendingViewStateExpr)
 
 @implementation ASDisplayNode (UIViewBridgeAccessibility)
-
-// iOS 11 only properties. Add this to silence "unimplemented selector" warnings
-// in old SDKs. If the caller doesn't respect our API_AVAILABLE attributes, then they
-// get an appropriate "unrecognized selector" runtime error.
-#if __IPHONE_OS_VERSION_MAX_ALLOWED < __IPHONE_11_0
-@dynamic accessibilityAttributedLabel, accessibilityAttributedHint, accessibilityAttributedValue;
-#endif
 
 - (BOOL)isAccessibilityElement
 {
@@ -934,28 +901,7 @@ nodeProperty = nodeValueExpr; _setToViewOnly(viewAndPendingViewStateProperty, vi
 {
   _bridge_prologue_write;
   _setAccessibilityToViewAndProperty(_accessibilityLabel, accessibilityLabel, accessibilityLabel, accessibilityLabel);
-#if __IPHONE_OS_VERSION_MAX_ALLOWED >= __IPHONE_11_0
-  if (AS_AVAILABLE_IOS(11)) {
-    NSAttributedString *accessibilityAttributedLabel = accessibilityLabel ? [[NSAttributedString alloc] initWithString:accessibilityLabel] : nil;
-    _setAccessibilityToViewAndProperty(_accessibilityAttributedLabel, accessibilityAttributedLabel, accessibilityAttributedLabel, accessibilityAttributedLabel);
-  }
-#endif
 }
-
-#if __IPHONE_OS_VERSION_MAX_ALLOWED >= __IPHONE_11_0
-- (NSAttributedString *)accessibilityAttributedLabel
-{
-  _bridge_prologue_read;
-  return _getAccessibilityFromViewOrProperty(_accessibilityAttributedLabel, accessibilityAttributedLabel);
-}
-
-- (void)setAccessibilityAttributedLabel:(NSAttributedString *)accessibilityAttributedLabel
-{
-  _bridge_prologue_write;
-  { _setAccessibilityToViewAndProperty(_accessibilityAttributedLabel, accessibilityAttributedLabel, accessibilityAttributedLabel, accessibilityAttributedLabel); }
-  { _setAccessibilityToViewAndProperty(_accessibilityLabel, accessibilityAttributedLabel.string, accessibilityLabel, accessibilityAttributedLabel.string); }
-}
-#endif
 
 - (NSString *)accessibilityHint
 {
@@ -967,29 +913,7 @@ nodeProperty = nodeValueExpr; _setToViewOnly(viewAndPendingViewStateProperty, vi
 {
   _bridge_prologue_write;
   _setAccessibilityToViewAndProperty(_accessibilityHint, accessibilityHint, accessibilityHint, accessibilityHint);
-#if __IPHONE_OS_VERSION_MAX_ALLOWED >= __IPHONE_11_0
-  if (AS_AVAILABLE_IOS(11)) {
-    NSAttributedString *accessibilityAttributedHint = accessibilityHint ? [[NSAttributedString alloc] initWithString:accessibilityHint] : nil;
-    _setAccessibilityToViewAndProperty(_accessibilityAttributedHint, accessibilityAttributedHint, accessibilityAttributedHint, accessibilityAttributedHint);
-  }
-#endif
 }
-
-#if __IPHONE_OS_VERSION_MAX_ALLOWED >= __IPHONE_11_0
-- (NSAttributedString *)accessibilityAttributedHint
-{
-  _bridge_prologue_read;
-  return _getAccessibilityFromViewOrProperty(_accessibilityAttributedHint, accessibilityAttributedHint);
-}
-
-- (void)setAccessibilityAttributedHint:(NSAttributedString *)accessibilityAttributedHint
-{
-  _bridge_prologue_write;
-  { _setAccessibilityToViewAndProperty(_accessibilityAttributedHint, accessibilityAttributedHint, accessibilityAttributedHint, accessibilityAttributedHint); }
-
-  { _setAccessibilityToViewAndProperty(_accessibilityHint, accessibilityAttributedHint.string, accessibilityHint, accessibilityAttributedHint.string); }
-}
-#endif
 
 - (NSString *)accessibilityValue
 {
@@ -1001,28 +925,7 @@ nodeProperty = nodeValueExpr; _setToViewOnly(viewAndPendingViewStateProperty, vi
 {
   _bridge_prologue_write;
   _setAccessibilityToViewAndProperty(_accessibilityValue, accessibilityValue, accessibilityValue, accessibilityValue);
-#if __IPHONE_OS_VERSION_MAX_ALLOWED >= __IPHONE_11_0
-  if (AS_AVAILABLE_IOS(11)) {
-    NSAttributedString *accessibilityAttributedValue = accessibilityValue ? [[NSAttributedString alloc] initWithString:accessibilityValue] : nil;
-    _setAccessibilityToViewAndProperty(_accessibilityAttributedValue, accessibilityAttributedValue, accessibilityAttributedValue, accessibilityAttributedValue);
-  }
-#endif
 }
-
-#if __IPHONE_OS_VERSION_MAX_ALLOWED >= __IPHONE_11_0
-- (NSAttributedString *)accessibilityAttributedValue
-{
-  _bridge_prologue_read;
-  return _getAccessibilityFromViewOrProperty(_accessibilityAttributedValue, accessibilityAttributedValue);
-}
-
-- (void)setAccessibilityAttributedValue:(NSAttributedString *)accessibilityAttributedValue
-{
-  _bridge_prologue_write;
-  { _setAccessibilityToViewAndProperty(_accessibilityAttributedValue, accessibilityAttributedValue, accessibilityAttributedValue, accessibilityAttributedValue); }
-  { _setAccessibilityToViewAndProperty(_accessibilityValue, accessibilityAttributedValue.string, accessibilityValue, accessibilityAttributedValue.string); }
-}
-#endif
 
 - (UIAccessibilityTraits)accessibilityTraits
 {

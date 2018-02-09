@@ -71,7 +71,7 @@
 
 - (void)tearDown
 {
-  [collectionNode waitUntilAllUpdatesAreProcessed];
+  [collectionNode waitUntilAllUpdatesAreCommitted];
   [super tearDown];
 }
 

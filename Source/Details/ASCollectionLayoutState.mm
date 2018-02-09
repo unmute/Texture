@@ -170,10 +170,9 @@ elementToLayoutAttributesTable:[NSMapTable elementToLayoutAttributesTable]];
 }
 
 - (ASPageToLayoutAttributesTable *)getAndRemoveUnmeasuredLayoutAttributesPageTableInRect:(CGRect)rect
+                                                                             contentSize:(CGSize)contentSize
+                                                                                pageSize:(CGSize)pageSize
 {
-  CGSize pageSize = _context.viewportSize;
-  CGSize contentSize = _contentSize;
-
   ASDN::MutexLocker l(__instanceLock__);
   if (_unmeasuredPageToLayoutAttributesTable.count == 0 || CGRectIsNull(rect) || CGRectIsEmpty(rect) || CGSizeEqualToSize(CGSizeZero, contentSize) || CGSizeEqualToSize(CGSizeZero, pageSize)) {
     return nil;

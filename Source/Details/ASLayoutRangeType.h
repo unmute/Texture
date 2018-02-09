@@ -74,3 +74,6 @@ typedef NS_ENUM(NSInteger, ASLayoutRangeType) {
 };
 
 static NSInteger const ASLayoutRangeTypeCount = 2;
+
+#define ASLayoutRangeTypeRender ASLayoutRangeTypeDisplay
+#define ASLayoutRangeTypeFetchData ASLayoutRangeTypePreload

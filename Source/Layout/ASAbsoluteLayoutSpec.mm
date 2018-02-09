@@ -107,3 +107,18 @@
 
 @end
 
+#pragma mark - ASStaticLayoutSpec
+
+@implementation ASStaticLayoutSpec : ASAbsoluteLayoutSpec
+
++ (instancetype)staticLayoutSpecWithChildren:(NSArray<id<ASLayoutElement>> *)children
+{
+  return [self absoluteLayoutSpecWithSizing:ASAbsoluteLayoutSpecSizingSizeToFit children:children];
+}
+
+- (instancetype)initWithChildren:(NSArray *)children
+{
+  return [super initWithSizing:ASAbsoluteLayoutSpecSizingSizeToFit children:children];
+}
+
+@end

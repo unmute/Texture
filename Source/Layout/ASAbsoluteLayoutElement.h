@@ -16,6 +16,7 @@
 //
 
 #import <AsyncDisplayKit/ASBaseDefines.h>
+#import <AsyncDisplayKit/ASDimensionDeprecated.h>
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -28,6 +29,11 @@ NS_ASSUME_NONNULL_BEGIN
  * @abstract The position of this object within its parent spec.
  */
 @property (nonatomic, assign) CGPoint layoutPosition;
+
+
+#pragma mark Deprecated
+
+@property (nonatomic, assign) ASRelativeSizeRange sizeRange ASDISPLAYNODE_DEPRECATED;
 
 @end
 

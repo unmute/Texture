@@ -25,7 +25,6 @@
 #import <AsyncDisplayKit/ASDisplayNode+FrameworkSubclasses.h>
 #import <AsyncDisplayKit/ASDisplayNodeExtras.h>
 #import <AsyncDisplayKit/ASDisplayNode+Beta.h>
-#import <AsyncDisplayKit/ASGraphicsContext.h>
 #import <AsyncDisplayKit/ASLayout.h>
 #import <AsyncDisplayKit/ASTextNode.h>
 #import <AsyncDisplayKit/ASImageNode+AnimatedImagePrivate.h>
@@ -41,8 +40,6 @@
 #import <AsyncDisplayKit/ASDisplayNodeInternal.h>
 
 #include <functional>
-
-static const CGSize kMinReleaseImageOnBackgroundSize = {20.0, 20.0};
 
 typedef void (^ASImageNodeDrawParametersBlock)(ASWeakMapEntry *entry);
 
@@ -178,8 +175,7 @@ typedef void (^ASImageNodeDrawParametersBlock)(ASWeakMapEntry *entry);
   self.contentsScale = ASScreenScale();
   self.contentMode = UIViewContentModeScaleAspectFill;
   self.opaque = NO;
-  self.clipsToBounds = YES;
-
+  
   // If no backgroundColor is set to the image node and it's a subview of UITableViewCell, UITableView is setting
   // the opaque value of all subviews to YES if highlighting / selection is happening and does not set it back to the
   // initial value. With setting a explicit backgroundColor we can prevent that change.
@@ -214,10 +210,11 @@ typedef void (^ASImageNodeDrawParametersBlock)(ASWeakMapEntry *entry);
   
   ASDN::MutexLocker l(__instanceLock__);
   
-  ASGraphicsBeginImageContextWithOptions(size, NO, 1);
+  UIGraphicsBeginImageContext(size);
   [self.placeholderColor setFill];
   UIRectFill(CGRectMake(0, 0, size.width, size.height));
-  UIImage *image = ASGraphicsGetImageAndEndCurrentContext();
+  UIImage *image = UIGraphicsGetImageFromCurrentImageContext();
+  UIGraphicsEndImageContext();
   
   return image;
 }
@@ -250,11 +247,11 @@ typedef void (^ASImageNodeDrawParametersBlock)(ASWeakMapEntry *entry);
   if (ASObjectIsEqual(_image, image)) {
     return;
   }
-
-  UIImage *oldImage = _image;
+  
   _image = image;
   
   if (image != nil) {
+    
     // We explicitly call setNeedsDisplay in this case, although we know setNeedsDisplay will be called with lock held.
     // Therefore we have to be careful in methods that are involved with setNeedsDisplay to not run into a deadlock
     [self setNeedsDisplay];
@@ -267,18 +264,9 @@ typedef void (^ASImageNodeDrawParametersBlock)(ASWeakMapEntry *entry);
         [self addSubnode:_debugLabelNode];
       });
     }
+
   } else {
     self.contents = nil;
-  }
-
-  // Destruction of bigger images on the main thread can be expensive
-  // and can take some time, so we dispatch onto a bg queue to
-  // actually dealloc.
-  CGSize oldImageSize = oldImage.size;
-  BOOL shouldReleaseImageOnBackgroundThread = oldImageSize.width > kMinReleaseImageOnBackgroundSize.width
-                                              || oldImageSize.height > kMinReleaseImageOnBackgroundSize.height;
-  if (shouldReleaseImageOnBackgroundThread) {
-    ASPerformBackgroundDeallocation(&oldImage);
   }
 }
 
@@ -442,13 +430,12 @@ typedef void (^ASImageNodeDrawParametersBlock)(ASWeakMapEntry *entry);
 }
 
 static ASWeakMap<ASImageNodeContentsKey *, UIImage *> *cache = nil;
-// Allocate cacheLock on the heap to prevent destruction at app exit (https://github.com/TextureGroup/Texture/issues/136)
-static ASDN::StaticMutex& cacheLock = *new ASDN::StaticMutex;
+static ASDN::Mutex cacheLock;
 
 + (ASWeakMapEntry *)contentsForkey:(ASImageNodeContentsKey *)key drawParameters:(id)drawParameters isCancelled:(asdisplaynode_iscancelled_block_t)isCancelled
 {
   {
-    ASDN::StaticMutexLocker l(cacheLock);
+    ASDN::MutexLocker l(cacheLock);
     if (!cache) {
       cache = [[ASWeakMap alloc] init];
     }
@@ -465,14 +452,14 @@ static ASDN::StaticMutex& cacheLock = *new ASDN::StaticMutex;
   }
 
   {
-    ASDN::StaticMutexLocker l(cacheLock);
+    ASDN::MutexLocker l(cacheLock);
     return [cache setObject:contents forKey:key];
   }
 }
 
 + (UIImage *)createContentsForkey:(ASImageNodeContentsKey *)key drawParameters:(id)drawParameters isCancelled:(asdisplaynode_iscancelled_block_t)isCancelled
 {
-  // The following `ASGraphicsBeginImageContextWithOptions` call will sometimes take take longer than 5ms on an
+  // The following `UIGraphicsBeginImageContextWithOptions` call will sometimes take take longer than 5ms on an
   // A5 processor for a 400x800 backingSize.
   // Check for cancellation before we call it.
   if (isCancelled()) {
@@ -481,7 +468,7 @@ static ASDN::StaticMutex& cacheLock = *new ASDN::StaticMutex;
 
   // Use contentsScale of 1.0 and do the contentsScale handling in boundsSizeInPixels so ASCroppedImageBackingSizeAndDrawRectInBounds
   // will do its rounding on pixel instead of point boundaries
-  ASGraphicsBeginImageContextWithOptions(key.backingSize, key.isOpaque, 1.0);
+  UIGraphicsBeginImageContextWithOptions(key.backingSize, key.isOpaque, 1.0);
   
   BOOL contextIsClean = YES;
   
@@ -522,13 +509,16 @@ static ASDN::StaticMutex& cacheLock = *new ASDN::StaticMutex;
     key.didDisplayNodeContentWithRenderingContext(context, drawParameters);
   }
 
-  // Check cancellation one last time before forming image.
+  // The following `UIGraphicsGetImageFromCurrentImageContext` call will commonly take more than 20ms on an
+  // A5 processor.  Check for cancellation before we call it.
   if (isCancelled()) {
-    ASGraphicsEndImageContext();
+    UIGraphicsEndImageContext();
     return nil;
   }
 
-  UIImage *result = ASGraphicsGetImageAndEndCurrentContext();
+  UIImage *result = UIGraphicsGetImageFromCurrentImageContext();
+  
+  UIGraphicsEndImageContext();
   
   if (key.imageModificationBlock) {
     result = key.imageModificationBlock(result);
@@ -739,7 +729,7 @@ static ASDN::StaticMutex& cacheLock = *new ASDN::StaticMutex;
 extern asimagenode_modification_block_t ASImageNodeRoundBorderModificationBlock(CGFloat borderWidth, UIColor *borderColor)
 {
   return ^(UIImage *originalImage) {
-    ASGraphicsBeginImageContextWithOptions(originalImage.size, NO, originalImage.scale);
+    UIGraphicsBeginImageContextWithOptions(originalImage.size, NO, originalImage.scale);
     UIBezierPath *roundOutline = [UIBezierPath bezierPathWithOvalInRect:(CGRect){CGPointZero, originalImage.size}];
 
     // Make the image round
@@ -755,21 +745,24 @@ extern asimagenode_modification_block_t ASImageNodeRoundBorderModificationBlock(
       [roundOutline stroke];
     }
 
-    return ASGraphicsGetImageAndEndCurrentContext();
+    UIImage *modifiedImage = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    return modifiedImage;
   };
 }
 
 extern asimagenode_modification_block_t ASImageNodeTintColorModificationBlock(UIColor *color)
 {
   return ^(UIImage *originalImage) {
-    ASGraphicsBeginImageContextWithOptions(originalImage.size, NO, originalImage.scale);
+    UIGraphicsBeginImageContextWithOptions(originalImage.size, NO, originalImage.scale);
     
     // Set color and render template
     [color setFill];
     UIImage *templateImage = [originalImage imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
     [templateImage drawAtPoint:CGPointZero blendMode:kCGBlendModeCopy alpha:1];
     
-    UIImage *modifiedImage = ASGraphicsGetImageAndEndCurrentContext();
+    UIImage *modifiedImage = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
 
     // if the original image was stretchy, keep it stretchy
     if (!UIEdgeInsetsEqualToEdgeInsets(originalImage.capInsets, UIEdgeInsetsZero)) {

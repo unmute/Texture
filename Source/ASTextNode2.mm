@@ -376,8 +376,7 @@ static NSArray *DefaultLinkAttributeNames = @[ NSLinkAttributeName ];
                                            text:(NSAttributedString *)text
 
 {
-  // Allocate layoutCacheLock on the heap to prevent destruction at app exit (https://github.com/TextureGroup/Texture/issues/136)
-  static ASDN::StaticMutex& layoutCacheLock = *new ASDN::StaticMutex;
+  static ASDN::Mutex layoutCacheLock;
   static NSCache<NSAttributedString *, ASTextCacheValue *> *textLayoutCache;
   static dispatch_once_t onceToken;
   dispatch_once(&onceToken, ^{
@@ -385,7 +384,7 @@ static NSArray *DefaultLinkAttributeNames = @[ NSLinkAttributeName ];
   });
   
   ASTextCacheValue *cacheValue = ({
-    ASDN::StaticMutexLocker lock(layoutCacheLock);
+    ASDN::MutexLocker lock(layoutCacheLock);
     cacheValue = [textLayoutCache objectForKey:text];
     if (cacheValue == nil) {
       cacheValue = [[ASTextCacheValue alloc] init];

@@ -47,8 +47,6 @@
 
 - (instancetype)initWithSections:(NSArray<ASSection *> *)sections items:(ASCollectionElementTwoDimensionalArray *)items supplementaryElements:(ASSupplementaryElementDictionary *)supplementaryElements
 {
-  NSCParameterAssert(items.count == sections.count);
-
   if (self = [super init]) {
     _sections = [sections copy];
     _sectionsOfItems = [[NSArray alloc] initWithArray:items copyItems:YES];
@@ -159,25 +157,8 @@
 
 - (NSIndexPath *)convertIndexPath:(NSIndexPath *)indexPath fromMap:(ASElementMap *)map
 {
-  if (indexPath.item == NSNotFound) {
-    // Section index path
-    NSInteger result = [self convertSection:indexPath.section fromMap:map];
-    return (result != NSNotFound ? [NSIndexPath indexPathWithIndex:result] : nil);
-  } else {
-    // Item index path
-    ASCollectionElement *element = [map elementForItemAtIndexPath:indexPath];
-    return [self indexPathForElement:element];
-  }
-}
-
-- (NSInteger)convertSection:(NSInteger)sectionIndex fromMap:(ASElementMap *)map
-{
-  if (![map sectionIndexIsValid:sectionIndex assert:YES]) {
-    return NSNotFound;
-  }
-
-  ASSection *section = map.sections[sectionIndex];
-  return [_sections indexOfObjectIdenticalTo:section];
+  id element = [map elementForItemAtIndexPath:indexPath];
+  return [self indexPathForElement:element];
 }
 
 #pragma mark - NSCopying
@@ -237,7 +218,7 @@
 - (BOOL)sectionIndexIsValid:(NSInteger)section assert:(BOOL)assert
 {
   NSInteger sectionCount = _sectionsOfItems.count;
-  if (section >= sectionCount || section < 0) {
+  if (section >= sectionCount) {
     if (assert) {
       ASDisplayNodeFailAssert(@"Invalid section index %zd when there are only %zd sections!", section, sectionCount);
     }
@@ -265,7 +246,7 @@
 
   NSInteger itemCount = _sectionsOfItems[section].count;
   NSInteger item = indexPath.item;
-  if (item >= itemCount || item < 0) {
+  if (item >= itemCount) {
     if (assert) {
       ASDisplayNodeFailAssert(@"Invalid item index %zd in section %zd which only has %zd items!", item, section, itemCount);
     }

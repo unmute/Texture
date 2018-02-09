@@ -226,8 +226,7 @@ static atomic_uint ASThrashTestSectionNextID = 1;
 #else
     _tableView.asyncDelegate = self;
     _tableView.asyncDataSource = self;
-    [_tableView reloadData];
-    [_tableView waitUntilAllUpdatesAreCommitted];
+    [_tableView reloadDataImmediately];
 #endif
     [_tableView layoutIfNeeded];
   }

@@ -52,6 +52,12 @@ static inline BOOL ASDisplayNodeThreadIsMain()
 
 #include <memory>
 
+/**
+ For use with ASDN::StaticMutex only.
+ */
+#define ASDISPLAYNODE_MUTEX_INITIALIZER {PTHREAD_MUTEX_INITIALIZER}
+#define ASDISPLAYNODE_MUTEX_RECURSIVE_INITIALIZER {PTHREAD_RECURSIVE_MUTEX_INITIALIZER}
+
 // This MUST always execute, even when assertions are disabled. Otherwise all lock operations become no-ops!
 // (To be explicit, do not turn this into an NSAssert, assert(), or any other kind of statement where the
 // evaluation of x_ can be compiled out.)
@@ -59,7 +65,7 @@ static inline BOOL ASDisplayNodeThreadIsMain()
   _Pragma("clang diagnostic push"); \
   _Pragma("clang diagnostic ignored \"-Wunused-variable\""); \
   volatile int res = (x_); \
-  ASDisplayNodeCAssert(res == 0, @"Expected %@ to return 0, got %d instead", @#x_, res); \
+  assert(res == 0); \
   _Pragma("clang diagnostic pop"); \
 } while (0)
 
@@ -136,7 +142,7 @@ namespace ASDN {
 #if !TIME_LOCKER
     
     SharedLocker (std::shared_ptr<T> const& l) ASDISPLAYNODE_NOTHROW : _l (l) {
-      ASDisplayNodeCAssertTrue(_l != nullptr);
+      assert(_l != nullptr);
       _l->lock ();
     }
     
@@ -211,12 +217,12 @@ namespace ASDN {
       mach_port_t thread_id = pthread_mach_thread_np(pthread_self());
       if (thread_id != _owner) {
         // New owner. Since this mutex can't be acquired by another thread if there is an existing owner, _owner and _count must be 0.
-        ASDisplayNodeCAssertTrue(0 == _owner);
-        ASDisplayNodeCAssertTrue(0 == _count);
+        assert(0 == _owner);
+        assert(0 == _count);
         _owner = thread_id;
       } else {
         // Existing owner tries to reacquire this (recursive) mutex. _count must already be positive.
-        ASDisplayNodeCAssertTrue(_count > 0);
+        assert(_count > 0);
       }
       ++_count;
 #endif
@@ -226,9 +232,9 @@ namespace ASDN {
 #if CHECK_LOCKING_SAFETY
       mach_port_t thread_id = pthread_mach_thread_np(pthread_self());
       // Unlocking a mutex on an unowning thread causes undefined behaviour. Assert and fail early.
-      ASDisplayNodeCAssertTrue(thread_id == _owner);
+      assert(thread_id == _owner);
       // Current thread owns this mutex. _count must be positive.
-      ASDisplayNodeCAssertTrue(_count > 0);
+      assert(_count > 0);
       --_count;
       if (0 == _count) {
         // Current thread is no longer the owner.
@@ -291,19 +297,18 @@ namespace ASDN {
   typedef SharedUnlocker<Mutex> MutexSharedUnlocker;
 
   /**
-   If you are creating a static mutex, use StaticMutex. This avoids expensive constructor overhead at startup (or worse, ordering
+   If you are creating a static mutex, use StaticMutex and specify its default value as one of ASDISPLAYNODE_MUTEX_INITIALIZER
+   or ASDISPLAYNODE_MUTEX_RECURSIVE_INITIALIZER. This avoids expensive constructor overhead at startup (or worse, ordering
    issues between different static objects). It also avoids running a destructor on app exit time (needless expense).
 
    Note that you can, but should not, use StaticMutex for non-static objects. It will leak its mutex on destruction,
    so avoid that!
+
+   If you fail to specify a default value (like ASDISPLAYNODE_MUTEX_INITIALIZER) an assert will be thrown when you attempt to lock.
    */
   struct StaticMutex
   {
-    StaticMutex () : _m (PTHREAD_MUTEX_INITIALIZER) {}
-
-    // non-copyable.
-    StaticMutex(const StaticMutex&) = delete;
-    StaticMutex &operator=(const StaticMutex&) = delete;
+    pthread_mutex_t _m; // public so it can be provided by ASDISPLAYNODE_MUTEX_INITIALIZER and friends
 
     void lock () {
       ASDISPLAYNODE_THREAD_ASSERT_ON_ERROR(pthread_mutex_lock (this->mutex()));
@@ -315,8 +320,8 @@ namespace ASDN {
 
     pthread_mutex_t *mutex () { return &_m; }
 
-  private:
-    pthread_mutex_t _m;
+    StaticMutex(const StaticMutex&) = delete;
+    StaticMutex &operator=(const StaticMutex&) = delete;
   };
 
   typedef Locker<StaticMutex> StaticMutexLocker;

@@ -147,6 +147,22 @@ typedef NS_ENUM(NSUInteger, ASLayoutElementType) {
 
 - (BOOL)implementsLayoutMethod;
 
+#pragma mark - Deprecated
+
+#define ASLayoutable ASLayoutElement
+
+/**
+ * @abstract Calculate a layout based on given size range.
+ *
+ * @param constrainedSize The minimum and maximum sizes the receiver should fit in.
+ *
+ * @return An ASLayout instance defining the layout of the receiver and its children.
+ *
+ * @deprecated Deprecated in version 2.0: Use layoutThatFits: or layoutThatFits:parentSize: if used in
+ * ASLayoutSpec subclasses
+ */
+- (nonnull ASLayout *)measureWithSizeRange:(ASSizeRange)constrainedSize ASDISPLAYNODE_DEPRECATED_MSG("Use layoutThatFits: instead.");
+
 @end
 
 #pragma mark - ASLayoutElementStyle
@@ -192,7 +208,7 @@ extern NSString * const ASLayoutElementStyleLayoutPositionProperty;
 #pragma mark - Sizing
 
 /**
- * @abstract The width property specifies the width of the content area of an ASLayoutElement.
+ * @abstract The width property specifies the height of the content area of an ASLayoutElement.
  * The minWidth and maxWidth properties override width.
  * Defaults to ASDimensionAuto
  */

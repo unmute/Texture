@@ -23,10 +23,9 @@
 #import <AsyncDisplayKit/ASLayoutSpecUtilities.h>
 #import <AsyncDisplayKit/ASLayoutSpec+Subclasses.h>
 
-#import <AsyncDisplayKit/ASEqualityHelpers.h>
 #import <AsyncDisplayKit/ASInternalHelpers.h>
 #import <AsyncDisplayKit/ASObjectDescriptionHelpers.h>
-#import <AsyncDisplayKit/ASRectMap.h>
+#import <AsyncDisplayKit/ASRectTable.h>
 
 CGPoint const ASPointNull = {NAN, NAN};
 
@@ -86,7 +85,7 @@ ASDISPLAYNODE_INLINE AS_WARN_UNUSED_RESULT BOOL ASLayoutIsFlattened(ASLayout *la
  */
 @property (nonatomic, strong) NSMutableArray<id<ASLayoutElement>> *sublayoutLayoutElements;
 
-@property (nonatomic, strong, readonly) ASRectMap *elementToRectMap;
+@property (nonatomic, strong, readonly) ASRectTable<id<ASLayoutElement>, id> *elementToRectTable;
 
 @end
 
@@ -143,9 +142,9 @@ static std::atomic_bool static_retainsSublayoutLayoutElements = ATOMIC_VAR_INIT(
     _sublayouts = sublayouts != nil ? [sublayouts copy] : @[];
 
     if (_sublayouts.count > 0) {
-      _elementToRectMap = [ASRectMap rectMapForWeakObjectPointers];
+      _elementToRectTable = [ASRectTable rectTableForWeakObjectPointers];
       for (ASLayout *layout in sublayouts) {
-        [_elementToRectMap setRect:layout.frame forKey:layout.layoutElement];
+        [_elementToRectTable setRect:layout.frame forKey:layout.layoutElement];
       }
     }
     
@@ -272,28 +271,6 @@ static std::atomic_bool static_retainsSublayoutLayoutElements = ATOMIC_VAR_INIT(
   return layout;
 }
 
-#pragma mark - Equality Checking
-
-- (BOOL)isEqual:(id)object
-{
-  ASLayout *layout = ASDynamicCast(object, ASLayout);
-  if (layout == nil) {
-    return NO;
-  }
-
-  if (!CGSizeEqualToSize(_size, layout.size)) return NO;
-
-  if (!((ASPointIsNull(self.position) && ASPointIsNull(layout.position))
-        || CGPointEqualToPoint(self.position, layout.position))) return NO;
-  if (_layoutElement != layout.layoutElement) return NO;
-
-  if (!ASObjectIsEqual(_sublayouts, layout.sublayouts)) {
-    return NO;
-  }
-
-  return YES;
-}
-
 #pragma mark - Accessors
 
 - (ASLayoutElementType)type
@@ -303,7 +280,7 @@ static std::atomic_bool static_retainsSublayoutLayoutElements = ATOMIC_VAR_INIT(
 
 - (CGRect)frameForElement:(id<ASLayoutElement>)layoutElement
 {
-  return _elementToRectMap ? [_elementToRectMap rectForKey:layoutElement] : CGRectNull;
+  return _elementToRectTable ? [_elementToRectTable rectForKey:layoutElement] : CGRectNull;
 }
 
 - (CGRect)frame
@@ -372,6 +349,30 @@ static std::atomic_bool static_retainsSublayoutLayoutElements = ATOMIC_VAR_INIT(
     [description appendString:[self _recursiveDescriptionForLayout:sublayout level:level + 1]];
   }
   return description;
+}
+
+@end
+
+@implementation ASLayout (Deprecation)
+
+- (id <ASLayoutElement>)layoutableObject
+{
+  return self.layoutElement;
+}
+
++ (instancetype)layoutWithLayoutableObject:(id<ASLayoutElement>)layoutElement
+                      constrainedSizeRange:(ASSizeRange)constrainedSizeRange
+                                      size:(CGSize)size
+{
+  return [self layoutWithLayoutElement:layoutElement size:size];
+}
+
++ (instancetype)layoutWithLayoutableObject:(id<ASLayoutElement>)layoutElement
+                      constrainedSizeRange:(ASSizeRange)constrainedSizeRange
+                                      size:(CGSize)size
+                                sublayouts:(nullable NSArray<ASLayout *> *)sublayouts
+{
+  return [self layoutWithLayoutElement:layoutElement size:size sublayouts:sublayouts];
 }
 
 @end

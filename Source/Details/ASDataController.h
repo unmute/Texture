@@ -244,11 +244,8 @@ extern NSString * const ASCollectionInvalidUpdateException;
  * 
  * @discussion Used to respond to a change in size of the containing view
  * (e.g. ASTableView or ASCollectionView after an orientation change).
- *
- * The invalidationBlock is called after flushing the ASMainSerialQueue, which ensures that any in-progress
- * layout calculations have been applied. The block will not be called if data hasn't been loaded.
  */
-- (void)relayoutAllNodesWithInvalidationBlock:(nullable void (^)(void))invalidationBlock;
+- (void)relayoutAllNodes;
 
 /**
  * Re-measures given nodes in the backing store.
@@ -257,12 +254,7 @@ extern NSString * const ASCollectionInvalidUpdateException;
  */
 - (void)relayoutNodes:(id<NSFastEnumeration>)nodes nodesSizeChanged:(NSMutableArray * _Nonnull)nodesSizesChanged;
 
-/**
- * See ASCollectionNode.h for full documentation of these methods.
- */
-@property (nonatomic, readonly) BOOL isProcessingUpdates;
-- (void)onDidFinishProcessingUpdates:(nullable void (^)(void))completion;
-- (void)waitUntilAllUpdatesAreProcessed;
+- (void)waitUntilAllUpdatesAreCommitted;
 
 /**
  * Notifies the data controller object that its environment has changed. The object will request its environment delegate for new information

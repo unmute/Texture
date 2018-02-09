@@ -260,7 +260,7 @@
   [window makeKeyAndVisible];
   
   [testController.collectionNode reloadData];
-  [testController.collectionNode waitUntilAllUpdatesAreProcessed];
+  [testController.collectionNode waitUntilAllUpdatesAreCommitted];
   [testController.collectionView layoutIfNeeded];
   
   NSIndexPath *indexPath = [NSIndexPath indexPathForItem:0 inSection:0];
@@ -397,7 +397,7 @@
   window.rootViewController = testController;\
   \
   [cn reloadData];\
-  [cn waitUntilAllUpdatesAreProcessed]; \
+  [cn waitUntilAllUpdatesAreCommitted]; \
   [testController.collectionView layoutIfNeeded];
 
 - (void)testThatSubmittingAValidInsertDoesNotThrowAnException
@@ -620,7 +620,7 @@
   [window makeKeyAndVisible];
 
   for (NSInteger i = 0; i < 2; i++) {
-    // NOTE: reloadData and waitUntilAllUpdatesAreProcessed are not sufficient here!!
+    // NOTE: waitUntilAllUpdatesAreCommitted or reloadDataImmediately is not sufficient here!!
     XCTestExpectation *done = [self expectationWithDescription:[NSString stringWithFormat:@"Reload #%td complete", i]];
     [cn reloadDataWithCompletion:^{
       [done fulfill];
@@ -755,7 +755,7 @@
   
   del.sectionGeneration++;
   [cn reloadData];
-  [cn waitUntilAllUpdatesAreProcessed];
+  [cn waitUntilAllUpdatesAreCommitted];
   
   NSInteger sectionCount = del->_itemCounts.size();
   for (NSInteger section = 0; section < sectionCount; section++) {
@@ -857,7 +857,7 @@
   [window layoutIfNeeded];
 
   ASCollectionNode *cn = testController.collectionNode;
-  [cn waitUntilAllUpdatesAreProcessed];
+  [cn waitUntilAllUpdatesAreCommitted];
   [cn.view layoutIfNeeded];
   ASCellNode *node = [cn nodeForItemAtIndexPath:[NSIndexPath indexPathForItem:0 inSection:0]];
   XCTAssertTrue(node.visible);
@@ -867,7 +867,7 @@
   [self waitForExpectationsWithTimeout:3 handler:nil];
 }
 
-- (void)disabled_testThatMultipleBatchFetchesDontHappenUnnecessarily
+- (void)testThatMultipleBatchFetchesDontHappenUnnecessarily
 {
   UIWindow *window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
   ASCollectionViewTestController *testController = [[ASCollectionViewTestController alloc] initWithNibName:nil bundle:nil];
@@ -880,7 +880,7 @@
   [window layoutIfNeeded];
 
   ASCollectionNode *cn = testController.collectionNode;
-  [cn waitUntilAllUpdatesAreProcessed];
+  [cn waitUntilAllUpdatesAreCommitted];
   XCTAssertGreaterThan(cn.bounds.size.height, cn.view.contentSize.height, @"Expected initial data not to fill collection view area.");
 
   __block NSUInteger batchFetchCount = 0;
@@ -926,7 +926,7 @@
   [window layoutIfNeeded];
 
   ASCollectionNode *cn = testController.collectionNode;
-  [cn waitUntilAllUpdatesAreProcessed];
+  [cn waitUntilAllUpdatesAreCommitted];
 
   __block NSUInteger batchFetchCount = 0;
   XCTestExpectation *e = [self expectationWithDescription:@"Batch fetching completed"];
@@ -1020,7 +1020,7 @@
   [view layoutIfNeeded];
   
   // Wait for ASDK reload to finish
-  [cn waitUntilAllUpdatesAreProcessed];
+  [cn waitUntilAllUpdatesAreCommitted];
   // Force UIKit to read updated data & range controller to update and account for it
   [cn.view layoutIfNeeded];
   [self waitForExpectationsWithTimeout:60 handler:nil];
@@ -1050,17 +1050,8 @@
   // Trigger the initial reload to start
   [window layoutIfNeeded];
 
-  // Test the APIs that monitor ASCollectionNode update handling
-  XCTAssertTrue(cn.isProcessingUpdates, @"ASCollectionNode should still be processing updates after initial layoutIfNeeded call (reloadData)");
-  [cn onDidFinishProcessingUpdates:^{
-    XCTAssertTrue(!cn.isProcessingUpdates, @"ASCollectionNode should no longer be processing updates inside -onDidFinishProcessingUpdates: block");
-  }];
-
   // Wait for ASDK reload to finish
-  [cn waitUntilAllUpdatesAreProcessed];
-
-  XCTAssertTrue(!cn.isProcessingUpdates, @"ASCollectionNode should no longer be processing updates after -wait call");
-
+  [cn waitUntilAllUpdatesAreCommitted];
   // Force UIKit to read updated data & range controller to update and account for it
   [cn.view layoutIfNeeded];
 
@@ -1097,12 +1088,12 @@
   [window layoutIfNeeded];
   
   // The initial reload is async, changing the trait collection here should be "mid-update"
-  ASPrimitiveTraitCollection traitCollection = ASPrimitiveTraitCollectionMakeDefault();
+  ASPrimitiveTraitCollection traitCollection;
   traitCollection.displayScale = cn.primitiveTraitCollection.displayScale + 1; // Just a dummy change
   traitCollection.containerSize = screenBounds.size;
   cn.primitiveTraitCollection = traitCollection;
   
-  [cn waitUntilAllUpdatesAreProcessed];
+  [cn waitUntilAllUpdatesAreCommitted];
   [cn.view layoutIfNeeded];
   
   // Assert that the new trait collection is picked up by all cell nodes, including ones that were not allocated but are forced to allocate now
@@ -1133,7 +1124,7 @@
   [window makeKeyAndVisible];
   [window layoutIfNeeded];
 
-  [cn waitUntilAllUpdatesAreProcessed];
+  [cn waitUntilAllUpdatesAreCommitted];
   for (NSInteger i = 0; i < itemCount; i++) {
     ASTextCellNodeWithSetSelectedCounter *node = [cn nodeForItemAtIndexPath:[NSIndexPath indexPathForItem:i inSection:0]];
     XCTAssert(node.automaticallyManagesSubnodes, @"Expected test cell node to use automatic subnode management. Can modify the test with a different class if needed.");

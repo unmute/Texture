@@ -29,7 +29,6 @@
 #import <AsyncDisplayKit/ASDataController.h>
 #import <AsyncDisplayKit/ASDisplayNodeExtras.h>
 #import <AsyncDisplayKit/ASDisplayNode+FrameworkPrivate.h>
-#import <AsyncDisplayKit/ASDisplayNode+Subclasses.h>
 #import <AsyncDisplayKit/ASElementMap.h>
 #import <AsyncDisplayKit/ASInternalHelpers.h>
 #import <AsyncDisplayKit/UICollectionViewLayout+ASConvenience.h>
@@ -64,12 +63,6 @@
     return __val; \
   }
 
-#define ASFlowLayoutDefault(layout, property, default)                                        \
-({                                                                                            \
-  UICollectionViewFlowLayout *flowLayout = ASDynamicCast(layout, UICollectionViewFlowLayout); \
-  flowLayout ? flowLayout.property : default;                                                 \
-})
-
 /// What, if any, invalidation should we perform during the next -layoutSubviews.
 typedef NS_ENUM(NSUInteger, ASCollectionViewInvalidationStyle) {
   /// Perform no invalidation.
@@ -101,10 +94,6 @@ static NSString * const kReuseIdentifier = @"_ASCollectionReuseIdentifier";
   NSHashTable<ASCellNode *> *_cellsForLayoutUpdates;
   id<ASCollectionViewLayoutFacilitatorProtocol> _layoutFacilitator;
   CGFloat _leadingScreensForBatching;
-  
-  // When we update our data controller in response to an interactive move,
-  // we don't want to tell the collection view about the change (it knows!)
-  BOOL _updatingInResponseToInteractiveMove;
   BOOL _inverted;
   
   NSUInteger _superBatchUpdateCount;
@@ -124,6 +113,15 @@ static NSString * const kReuseIdentifier = @"_ASCollectionReuseIdentifier";
   BOOL _zeroContentInsets;
   
   ASCollectionViewInvalidationStyle _nextLayoutInvalidationStyle;
+  
+  /**
+   * Our layer, retained. Under iOS < 9, when collection views are removed from the hierarchy,
+   * their layers may be deallocated and become dangling pointers. This puts the collection view
+   * into a very dangerous state where pretty much any call will crash it. So we manually retain our layer.
+   *
+   * You should never access this, and it will be nil under iOS >= 9.
+   */
+  CALayer *_retainedLayer;
   
   /**
    * If YES, the `UICollectionView` will reload its data on next layout pass so we should not forward any updates to it.
@@ -194,8 +192,6 @@ static NSString * const kReuseIdentifier = @"_ASCollectionReuseIdentifier";
     unsigned int interop:1;
     unsigned int interopWillDisplayCell:1;
     unsigned int interopDidEndDisplayingCell:1;
-    unsigned int interopWillDisplaySupplementaryView:1;
-    unsigned int interopdidEndDisplayingSupplementaryView:1;
   } _asyncDelegateFlags;
   
   struct {
@@ -213,8 +209,6 @@ static NSString * const kReuseIdentifier = @"_ASCollectionReuseIdentifier";
     unsigned int numberOfSectionsInCollectionNode:1;
     unsigned int collectionNodeNumberOfItemsInSection:1;
     unsigned int collectionNodeContextForSection:1;
-    unsigned int collectionNodeCanMoveItem:1;
-    unsigned int collectionNodeMoveItem:1;
 
     // Whether this data source conforms to ASCollectionDataSourceInterop
     unsigned int interop:1;
@@ -270,7 +264,7 @@ static NSString * const kReuseIdentifier = @"_ASCollectionReuseIdentifier";
   // Experiments done by Instagram show that this option being YES (default)
   // when unused causes a significant hit to scroll performance.
   // https://github.com/Instagram/IGListKit/issues/318
-  if (AS_AVAILABLE_IOS(10)) {
+  if (AS_AT_LEAST_IOS10) {
     super.prefetchingEnabled = NO;
   }
 
@@ -307,6 +301,10 @@ static NSString * const kReuseIdentifier = @"_ASCollectionReuseIdentifier";
   
   [self registerClass:[_ASCollectionViewCell class] forCellWithReuseIdentifier:kReuseIdentifier];
   
+  if (!AS_AT_LEAST_IOS9) {
+    _retainedLayer = self.layer;
+  }
+  
   [self _configureCollectionViewLayout:layout];
   
   return self;
@@ -323,8 +321,8 @@ static NSString * const kReuseIdentifier = @"_ASCollectionReuseIdentifier";
   [self setAsyncDataSource:nil];
 
   // Data controller & range controller may own a ton of nodes, let's deallocate those off-main.
-  ASPerformBackgroundDeallocation(&_dataController);
-  ASPerformBackgroundDeallocation(&_rangeController);
+  ASPerformBackgroundDeallocation(_dataController);
+  ASPerformBackgroundDeallocation(_rangeController);
 }
 
 #pragma mark -
@@ -358,20 +356,7 @@ static NSString * const kReuseIdentifier = @"_ASCollectionReuseIdentifier";
 
 - (void)relayoutItems
 {
-  [_dataController relayoutAllNodesWithInvalidationBlock:^{
-    [self.collectionViewLayout invalidateLayout];
-    [self invalidateFlowLayoutDelegateMetrics];
-  }];
-}
-
-- (BOOL)isProcessingUpdates
-{
-  return [_dataController isProcessingUpdates];
-}
-
-- (void)onDidFinishProcessingUpdates:(nullable void (^)())completion
-{
-  [_dataController onDidFinishProcessingUpdates:completion];
+  [_dataController relayoutAllNodes];
 }
 
 - (void)waitUntilAllUpdatesAreCommitted
@@ -382,8 +367,8 @@ static NSString * const kReuseIdentifier = @"_ASCollectionReuseIdentifier";
     //    ASDisplayNodeFailAssert(@"Should not call %@ during batch update", NSStringFromSelector(_cmd));
     return;
   }
-
-  [_dataController waitUntilAllUpdatesAreProcessed];
+  
+  [_dataController waitUntilAllUpdatesAreCommitted];
 }
 
 - (void)setDataSource:(id<UICollectionViewDataSource>)dataSource
@@ -447,8 +432,6 @@ static NSString * const kReuseIdentifier = @"_ASCollectionReuseIdentifier";
     _asyncDataSourceFlags.collectionNodeNodeBlockForSupplementaryElement = [_asyncDataSource respondsToSelector:@selector(collectionNode:nodeBlockForSupplementaryElementOfKind:atIndexPath:)];
     _asyncDataSourceFlags.collectionNodeSupplementaryElementKindsInSection = [_asyncDataSource respondsToSelector:@selector(collectionNode:supplementaryElementKindsInSection:)];
     _asyncDataSourceFlags.nodeModelForItem = [_asyncDataSource respondsToSelector:@selector(collectionNode:nodeModelForItemAtIndexPath:)];
-    _asyncDataSourceFlags.collectionNodeCanMoveItem = [_asyncDataSource respondsToSelector:@selector(collectionNode:canMoveItemWithNode:)];
-    _asyncDataSourceFlags.collectionNodeMoveItem = [_asyncDataSource respondsToSelector:@selector(collectionNode:moveItemAtIndexPath:toIndexPath:)];
 
     _asyncDataSourceFlags.interop = [_asyncDataSource conformsToProtocol:@protocol(ASCollectionDataSourceInterop)];
     if (_asyncDataSourceFlags.interop) {
@@ -534,15 +517,11 @@ static NSString * const kReuseIdentifier = @"_ASCollectionReuseIdentifier";
     _asyncDelegateFlags.collectionNodeShouldShowMenuForItem = [_asyncDelegate respondsToSelector:@selector(collectionNode:shouldShowMenuForItemAtIndexPath:)];
     _asyncDelegateFlags.collectionNodeCanPerformActionForItem = [_asyncDelegate respondsToSelector:@selector(collectionNode:canPerformAction:forItemAtIndexPath:sender:)];
     _asyncDelegateFlags.collectionNodePerformActionForItem = [_asyncDelegate respondsToSelector:@selector(collectionNode:performAction:forItemAtIndexPath:sender:)];
-    _asyncDelegateFlags.collectionNodeWillDisplaySupplementaryElement = [_asyncDelegate respondsToSelector:@selector(collectionNode:willDisplaySupplementaryElementWithNode:)];
-    _asyncDelegateFlags.collectionNodeDidEndDisplayingSupplementaryElement = [_asyncDelegate respondsToSelector:@selector(collectionNode:didEndDisplayingSupplementaryElementWithNode:)];
     _asyncDelegateFlags.interop = [_asyncDelegate conformsToProtocol:@protocol(ASCollectionDelegateInterop)];
     if (_asyncDelegateFlags.interop) {
       id<ASCollectionDelegateInterop> interopDelegate = (id<ASCollectionDelegateInterop>)_asyncDelegate;
       _asyncDelegateFlags.interopWillDisplayCell = [interopDelegate respondsToSelector:@selector(collectionView:willDisplayCell:forItemAtIndexPath:)];
       _asyncDelegateFlags.interopDidEndDisplayingCell = [interopDelegate respondsToSelector:@selector(collectionView:didEndDisplayingCell:forItemAtIndexPath:)];
-      _asyncDelegateFlags.interopWillDisplaySupplementaryView = [interopDelegate respondsToSelector:@selector(collectionView:willDisplaySupplementaryView:forElementKind:atIndexPath:)];
-      _asyncDelegateFlags.interopdidEndDisplayingSupplementaryView = [interopDelegate respondsToSelector:@selector(collectionView:didEndDisplayingSupplementaryView:forElementOfKind:atIndexPath:)];
     }
   }
 
@@ -674,13 +653,19 @@ static NSString * const kReuseIdentifier = @"_ASCollectionReuseIdentifier";
   if (indexPath == nil) {
     return nil;
   }
-
-  NSIndexPath *viewIndexPath = [_dataController.visibleMap convertIndexPath:indexPath fromMap:_dataController.pendingMap];
-  if (viewIndexPath == nil && wait) {
-    [self waitUntilAllUpdatesAreCommitted];
-    return [self convertIndexPathFromCollectionNode:indexPath waitingIfNeeded:NO];
+  
+  // If this is a section index path, we don't currently have a method
+  // to do a mapping.
+  if (indexPath.item == NSNotFound) {
+    return indexPath;
+  } else {
+    NSIndexPath *viewIndexPath = [_dataController.visibleMap convertIndexPath:indexPath fromMap:_dataController.pendingMap];
+    if (viewIndexPath == nil && wait) {
+      [self waitUntilAllUpdatesAreCommitted];
+      return [self convertIndexPathFromCollectionNode:indexPath waitingIfNeeded:NO];
+    }
+    return viewIndexPath;
   }
-  return viewIndexPath;
 }
 
 /**
@@ -714,7 +699,13 @@ static NSString * const kReuseIdentifier = @"_ASCollectionReuseIdentifier";
     return nil;
   }
 
-  return [_dataController.pendingMap convertIndexPath:indexPath fromMap:_dataController.visibleMap];
+  // If this is a section index path, we don't currently have a method
+  // to do a mapping.
+  if (indexPath.item == NSNotFound) {
+    return indexPath;
+  } else {
+    return [_dataController.pendingMap convertIndexPath:indexPath fromMap:_dataController.visibleMap];
+  }
 }
 
 - (NSArray<NSIndexPath *> *)convertIndexPathsToCollectionNode:(NSArray<NSIndexPath *> *)indexPaths
@@ -770,25 +761,6 @@ static NSString * const kReuseIdentifier = @"_ASCollectionReuseIdentifier";
   self.dataController.usesSynchronousDataLoading = usesSynchronousDataLoading;
 }
 
-- (void)invalidateFlowLayoutDelegateMetrics {
-  for (ASCollectionElement *element in self.dataController.pendingMap) {
-    // This may be either a Supplementary or Item type element.
-    // For UIKit passthrough cells of either type, re-fetch their sizes from the standard UIKit delegate methods.
-    ASCellNode *node = element.node;
-    if (node.shouldUseUIKitCell) {
-      NSIndexPath *indexPath = [self indexPathForNode:node];
-      NSString *kind = [element supplementaryElementKind];
-      CGSize previousSize = node.style.preferredSize;
-      CGSize size = [self _sizeForUIKitCellWithKind:kind atIndexPath:indexPath];
-
-      if (!CGSizeEqualToSize(previousSize, size)) {
-        node.style.preferredSize = size;
-        [node invalidateCalculatedLayout];
-      }
-    }
-  }
-}
-
 #pragma mark Internal
 
 - (void)_configureCollectionViewLayout:(nonnull UICollectionViewLayout *)layout
@@ -797,46 +769,6 @@ static NSString * const kReuseIdentifier = @"_ASCollectionReuseIdentifier";
   if (_hasDataControllerLayoutDelegate) {
     _dataController.layoutDelegate = (id<ASDataControllerLayoutDelegate>)layout;
   }
-}
-
-/**
- This method is called only for UIKit Passthrough cells - either regular Items or Supplementary elements.
- It checks if the delegate implements the UICollectionViewFlowLayout methods that provide sizes, and if not,
- uses the default values set on the flow layout. If a flow layout is not in use, UICollectionView Passthrough
- cells must be sized by logic in the Layout object, and Texture does not participate in these paths.
-*/
-- (CGSize)_sizeForUIKitCellWithKind:(NSString *)kind atIndexPath:(NSIndexPath *)indexPath
-{
-  CGSize size = CGSizeZero;
-  UICollectionViewLayout *l = self.collectionViewLayout;
-
-  if (kind == nil) {
-    ASDisplayNodeAssert(_asyncDataSourceFlags.interop, @"This code should not be called except for UIKit passthrough compatibility");
-    SEL sizeForItem = @selector(collectionView:layout:sizeForItemAtIndexPath:);
-    if ([_asyncDelegate respondsToSelector:sizeForItem]) {
-      size = [(id)_asyncDelegate collectionView:self layout:l sizeForItemAtIndexPath:indexPath];
-    } else {
-      size = ASFlowLayoutDefault(l, itemSize, CGSizeZero);
-    }
-  } else if ([kind isEqualToString:UICollectionElementKindSectionHeader]) {
-    ASDisplayNodeAssert(_asyncDataSourceFlags.interopViewForSupplementaryElement, @"This code should not be called except for UIKit passthrough compatibility");
-    SEL sizeForHeader = @selector(collectionView:layout:referenceSizeForHeaderInSection:);
-    if ([_asyncDelegate respondsToSelector:sizeForHeader]) {
-      size = [(id)_asyncDelegate collectionView:self layout:l referenceSizeForHeaderInSection:indexPath.section];
-    } else {
-      size = ASFlowLayoutDefault(l, headerReferenceSize, CGSizeZero);
-    }
-  } else if ([kind isEqualToString:UICollectionElementKindSectionFooter]) {
-    ASDisplayNodeAssert(_asyncDataSourceFlags.interopViewForSupplementaryElement, @"This code should not be called except for UIKit passthrough compatibility");
-    SEL sizeForFooter = @selector(collectionView:layout:referenceSizeForFooterInSection:);
-    if ([_asyncDelegate respondsToSelector:sizeForFooter]) {
-      size = [(id)_asyncDelegate collectionView:self layout:l referenceSizeForFooterInSection:indexPath.section];
-    } else {
-      size = ASFlowLayoutDefault(l, footerReferenceSize, CGSizeZero);
-    }
-  }
-
-  return size;
 }
 
 /**
@@ -1019,8 +951,15 @@ static NSString * const kReuseIdentifier = @"_ASCollectionReuseIdentifier";
   return [_dataController.visibleMap numberOfItemsInSection:section];
 }
 
+#define ASIndexPathForSection(section) [NSIndexPath indexPathForItem:0 inSection:section]
+#define ASFlowLayoutDefault(layout, property, default)                                        \
+({                                                                                            \
+  UICollectionViewFlowLayout *flowLayout = ASDynamicCast(layout, UICollectionViewFlowLayout); \
+  flowLayout ? flowLayout.property : default;                                                 \
+})
+
 - (CGSize)collectionView:(UICollectionView *)collectionView layout:(UICollectionViewLayout *)layout
-                                            sizeForItemAtIndexPath:(NSIndexPath *)indexPath
+  sizeForItemAtIndexPath:(NSIndexPath *)indexPath
 {
   ASDisplayNodeAssertMainThread();
   ASCollectionElement *e = [_dataController.visibleMap elementForItemAtIndexPath:indexPath];
@@ -1028,65 +967,66 @@ static NSString * const kReuseIdentifier = @"_ASCollectionReuseIdentifier";
 }
 
 - (CGSize)collectionView:(UICollectionView *)cv layout:(UICollectionViewLayout *)l
-                       referenceSizeForHeaderInSection:(NSInteger)section
+referenceSizeForHeaderInSection:(NSInteger)section
 {
   ASDisplayNodeAssertMainThread();
   ASElementMap *map = _dataController.visibleMap;
   ASCollectionElement *e = [map supplementaryElementOfKind:UICollectionElementKindSectionHeader
-                                               atIndexPath:[NSIndexPath indexPathForItem:0 inSection:section]];
+                                               atIndexPath:ASIndexPathForSection(section)];
   return e ? [self sizeForElement:e] : ASFlowLayoutDefault(l, headerReferenceSize, CGSizeZero);
 }
 
 - (CGSize)collectionView:(UICollectionView *)cv layout:(UICollectionViewLayout *)l
-                       referenceSizeForFooterInSection:(NSInteger)section
+referenceSizeForFooterInSection:(NSInteger)section
 {
   ASDisplayNodeAssertMainThread();
   ASElementMap *map = _dataController.visibleMap;
   ASCollectionElement *e = [map supplementaryElementOfKind:UICollectionElementKindSectionFooter
-                                               atIndexPath:[NSIndexPath indexPathForItem:0 inSection:section]];
+                                               atIndexPath:ASIndexPathForSection(section)];
   return e ? [self sizeForElement:e] : ASFlowLayoutDefault(l, footerReferenceSize, CGSizeZero);
 }
 
 // For the methods that call delegateIndexPathForSection:withSelector:, translate the section from
 // visibleMap to pendingMap. If the section no longer exists, or the delegate doesn't implement
-// the selector, we will return NSNotFound (and then use the ASFlowLayoutDefault).
-- (NSInteger)delegateIndexForSection:(NSInteger)section withSelector:(SEL)selector
+// the selector, we will return a nil indexPath (and then use the ASFlowLayoutDefault).
+- (NSIndexPath *)delegateIndexPathForSection:(NSInteger)section withSelector:(SEL)selector
 {
   if ([_asyncDelegate respondsToSelector:selector]) {
-    return [_dataController.pendingMap convertSection:section fromMap:_dataController.visibleMap];
+    return [_dataController.pendingMap convertIndexPath:ASIndexPathForSection(section)
+                                                fromMap:_dataController.visibleMap];
   } else {
-    return NSNotFound;
+    return nil;
   }
 }
 
 - (UIEdgeInsets)collectionView:(UICollectionView *)cv layout:(UICollectionViewLayout *)l
-                                      insetForSectionAtIndex:(NSInteger)section
+        insetForSectionAtIndex:(NSInteger)section
 {
-  section = [self delegateIndexForSection:section withSelector:_cmd];
-  if (section != NSNotFound) {
-    return [(id)_asyncDelegate collectionView:cv layout:l insetForSectionAtIndex:section];
+  NSIndexPath *indexPath = [self delegateIndexPathForSection:section withSelector:_cmd];
+  if (indexPath) {
+    return [(id)_asyncDelegate collectionView:cv layout:l insetForSectionAtIndex:indexPath.section];
   }
   return ASFlowLayoutDefault(l, sectionInset, UIEdgeInsetsZero);
 }
 
 - (CGFloat)collectionView:(UICollectionView *)cv layout:(UICollectionViewLayout *)l
-               minimumInteritemSpacingForSectionAtIndex:(NSInteger)section
+minimumInteritemSpacingForSectionAtIndex:(NSInteger)section
 {
-  section = [self delegateIndexForSection:section withSelector:_cmd];
-  if (section != NSNotFound) {
+  NSIndexPath *indexPath = [self delegateIndexPathForSection:section withSelector:_cmd];
+  if (indexPath) {
     return [(id)_asyncDelegate collectionView:cv layout:l
-               minimumInteritemSpacingForSectionAtIndex:section];
+     minimumInteritemSpacingForSectionAtIndex:indexPath.section];
   }
   return ASFlowLayoutDefault(l, minimumInteritemSpacing, 10.0); // Default is documented as 10.0
 }
 
 - (CGFloat)collectionView:(UICollectionView *)cv layout:(UICollectionViewLayout *)l
-                    minimumLineSpacingForSectionAtIndex:(NSInteger)section
+minimumLineSpacingForSectionAtIndex:(NSInteger)section
 {
-  section = [self delegateIndexForSection:section withSelector:_cmd];
-  if (section != NSNotFound) {
+  NSIndexPath *indexPath = [self delegateIndexPathForSection:section withSelector:_cmd];
+  if (indexPath) {
     return [(id)_asyncDelegate collectionView:cv layout:l
-                    minimumLineSpacingForSectionAtIndex:section];
+          minimumLineSpacingForSectionAtIndex:indexPath.section];
   }
   return ASFlowLayoutDefault(l, minimumLineSpacing, 10.0);      // Default is documented as 10.0
 }
@@ -1096,7 +1036,7 @@ static NSString * const kReuseIdentifier = @"_ASCollectionReuseIdentifier";
   if ([_registeredSupplementaryKinds containsObject:kind] == NO) {
     [self registerSupplementaryNodeOfKind:kind];
   }
-  
+
   UICollectionReusableView *view = nil;
   ASCollectionElement *element = [_dataController.visibleMap supplementaryElementOfKind:kind atIndexPath:indexPath];
   ASCellNode *node = element.node;
@@ -1147,10 +1087,7 @@ static NSString * const kReuseIdentifier = @"_ASCollectionReuseIdentifier";
 - (void)collectionView:(UICollectionView *)collectionView willDisplayCell:(UICollectionViewCell *)rawCell forItemAtIndexPath:(NSIndexPath *)indexPath
 {
   if (_asyncDelegateFlags.interopWillDisplayCell) {
-    ASCellNode *node = [self nodeForItemAtIndexPath:indexPath];
-    if (node.shouldUseUIKitCell) {
-      [(id <ASCollectionDelegateInterop>)_asyncDelegate collectionView:collectionView willDisplayCell:rawCell forItemAtIndexPath:indexPath];
-    }
+    [(id <ASCollectionDelegateInterop>)_asyncDelegate collectionView:collectionView willDisplayCell:rawCell forItemAtIndexPath:indexPath];
   }
 
   _ASCollectionViewCell *cell = ASDynamicCastStrict(rawCell, _ASCollectionViewCell);
@@ -1171,7 +1108,7 @@ static NSString * const kReuseIdentifier = @"_ASCollectionReuseIdentifier";
   ASCellNode *cellNode = element.node;
   cellNode.scrollView = collectionView;
 
-  // Update the selected background view in collectionView:willDisplayCell:forItemAtIndexPath: otherwise it could be too
+  // Update the selected background view in collectionView:willDisplayCell:forItemAtIndexPath: otherwise it could be to
   // early e.g. if the selectedBackgroundView was set in didLoad()
   cell.selectedBackgroundView = cellNode.selectedBackgroundView;
   
@@ -1207,10 +1144,7 @@ static NSString * const kReuseIdentifier = @"_ASCollectionReuseIdentifier";
 - (void)collectionView:(UICollectionView *)collectionView didEndDisplayingCell:(UICollectionViewCell *)rawCell forItemAtIndexPath:(NSIndexPath *)indexPath
 {
   if (_asyncDelegateFlags.interopDidEndDisplayingCell) {
-    ASCellNode *node = [self nodeForItemAtIndexPath:indexPath];
-    if (node.shouldUseUIKitCell) {
-      [(id <ASCollectionDelegateInterop>)_asyncDelegate collectionView:collectionView didEndDisplayingCell:rawCell forItemAtIndexPath:indexPath];
-    }
+    [(id <ASCollectionDelegateInterop>)_asyncDelegate collectionView:collectionView didEndDisplayingCell:rawCell forItemAtIndexPath:indexPath];
   }
 
   _ASCollectionViewCell *cell = ASDynamicCastStrict(rawCell, _ASCollectionViewCell);
@@ -1251,13 +1185,6 @@ static NSString * const kReuseIdentifier = @"_ASCollectionReuseIdentifier";
 
 - (void)collectionView:(UICollectionView *)collectionView willDisplaySupplementaryView:(UICollectionReusableView *)rawView forElementKind:(NSString *)elementKind atIndexPath:(NSIndexPath *)indexPath
 {
-  if (_asyncDelegateFlags.interopWillDisplaySupplementaryView) {
-    ASCellNode *node = [self supplementaryNodeForElementKind:elementKind atIndexPath:indexPath];
-    if (node.shouldUseUIKitCell) {
-      [(id <ASCollectionDelegateInterop>)_asyncDelegate collectionView:collectionView willDisplaySupplementaryView:rawView forElementKind:elementKind atIndexPath:indexPath];
-    }
-  }
-
   _ASCollectionReusableView *view = ASDynamicCastStrict(rawView, _ASCollectionReusableView);
   if (view == nil) {
     return;
@@ -1291,13 +1218,6 @@ static NSString * const kReuseIdentifier = @"_ASCollectionReuseIdentifier";
 
 - (void)collectionView:(UICollectionView *)collectionView didEndDisplayingSupplementaryView:(UICollectionReusableView *)rawView forElementOfKind:(NSString *)elementKind atIndexPath:(NSIndexPath *)indexPath
 {
-  if (_asyncDelegateFlags.interopdidEndDisplayingSupplementaryView) {
-    ASCellNode *node = [self supplementaryNodeForElementKind:elementKind atIndexPath:indexPath];
-    if (node.shouldUseUIKitCell) {
-      [(id <ASCollectionDelegateInterop>)_asyncDelegate collectionView:collectionView didEndDisplayingSupplementaryView:rawView forElementOfKind:elementKind atIndexPath:indexPath];
-    }
-  }
-
   _ASCollectionReusableView *view = ASDynamicCastStrict(rawView, _ASCollectionReusableView);
   if (view == nil) {
     return;
@@ -1487,66 +1407,6 @@ static NSString * const kReuseIdentifier = @"_ASCollectionReuseIdentifier";
   }
 }
 
-- (BOOL)collectionView:(UICollectionView *)collectionView canMoveItemAtIndexPath:(NSIndexPath *)indexPath
-{
-  // Mimic UIKit's gating logic.
-  // If the data source doesn't support moving, then all bets are off.
-  if (!_asyncDataSourceFlags.collectionNodeMoveItem) {
-    return NO;
-  }
-  
-  // Currently we do not support interactive moves when using async layout. The reason is, we do not have a mechanism
-  // to propagate the "presentation data" element map (containing the speculative in-progress moves) to the layout delegate,
-  // and this can cause exceptions to be thrown from UICV. For example, if you drag an item out of a section,
-  // the element map will still contain N items in that section, even though there's only N-1 shown, and UICV will
-  // throw an exception that you specified an element that doesn't exist.
-  //
-  // In iOS >= 11, this is made much easier by the UIDataSourceTranslating API. In previous versions of iOS our best bet
-  // would be to capture the invalidation contexts that are sent during interactive moves and make our own data source translator.
-  if ([self.collectionViewLayout isKindOfClass:[ASCollectionLayout class]]) {
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-      as_log_debug(ASCollectionLog(), "Collection node item interactive movement is not supported when using a layout delegate. This message will only be logged once. Node: %@", ASObjectDescriptionMakeTiny(self));
-    });
-    return NO;
-  }
-
-  // If the data source implements canMoveItem, let them decide.
-  if (_asyncDataSourceFlags.collectionNodeCanMoveItem) {
-    if (auto cellNode = [self nodeForItemAtIndexPath:indexPath]) {
-      GET_COLLECTIONNODE_OR_RETURN(collectionNode, NO);
-      return [_asyncDataSource collectionNode:collectionNode canMoveItemWithNode:cellNode];
-    }
-  }
-  
-  // Otherwise allow the move for all items.
-  return YES;
-}
-
-- (void)collectionView:(UICollectionView *)collectionView moveItemAtIndexPath:(NSIndexPath *)sourceIndexPath toIndexPath:(NSIndexPath *)destinationIndexPath
-{
-  ASDisplayNodeAssert(_asyncDataSourceFlags.collectionNodeMoveItem, @"Should not allow interactive collection item movement if data source does not support it.");
-  
-  // Inform the data source first, in case they call nodeForItemAtIndexPath:.
-  // We want to make sure we return them the node for the item they have in mind.
-  if (auto collectionNode = self.collectionNode) {
-    [_asyncDataSource collectionNode:collectionNode moveItemAtIndexPath:sourceIndexPath toIndexPath:destinationIndexPath];
-  }
-  
-  // Now we update our data controller's store.
-  // Get up to date
-  [self waitUntilAllUpdatesAreCommitted];
-  // Set our flag to suppress informing super about the change.
-  ASDisplayNodeAssertFalse(_updatingInResponseToInteractiveMove);
-  _updatingInResponseToInteractiveMove = YES;
-  // Submit the move
-  [self moveItemAtIndexPath:sourceIndexPath toIndexPath:destinationIndexPath];
-  // Wait for it to finish – should be fast!
-  [self waitUntilAllUpdatesAreCommitted];
-  // Clear the flag
-  _updatingInResponseToInteractiveMove = NO;
-}
-
 - (void)scrollViewDidScroll:(UIScrollView *)scrollView
 {
   // If a scroll happenes the current range mode needs to go to full
@@ -1557,7 +1417,7 @@ static NSString * const kReuseIdentifier = @"_ASCollectionReuseIdentifier";
   }
   
   for (_ASCollectionViewCell *cell in _cellsForVisibilityUpdates) {
-    // _cellsForVisibilityUpdates only includes cells for ASCellNode subclasses with overrides of the visibility method.
+    // Only nodes that respond to the selector are added to _cellsForVisibilityUpdates
     [cell cellNodeVisibilityEvent:ASCellNodeVisibilityEventVisibleRectChanged inScrollView:scrollView];
   }
   if (_asyncDelegateFlags.scrollViewDidScroll) {
@@ -1626,12 +1486,7 @@ static NSString * const kReuseIdentifier = @"_ASCollectionReuseIdentifier";
 
 - (void)setLeadingScreensForBatching:(CGFloat)leadingScreensForBatching
 {
-  if (_leadingScreensForBatching != leadingScreensForBatching) {
-    _leadingScreensForBatching = leadingScreensForBatching;
-    ASPerformBlockOnMainThread(^{
-      [self _checkForBatchFetching];
-    });
-  }
+  _leadingScreensForBatching = leadingScreensForBatching;
 }
 
 - (CGFloat)leadingScreensForBatching
@@ -1679,6 +1534,10 @@ static NSString * const kReuseIdentifier = @"_ASCollectionReuseIdentifier";
 {
   ASDisplayNodeAssertNotNil(self.layoutInspector, @"Layout inspector should be assigned.");
   return [self.layoutInspector scrollableDirections];
+}
+
+- (ASScrollDirection)flowLayoutScrollableDirections:(UICollectionViewFlowLayout *)flowLayout {
+  return (flowLayout.scrollDirection == UICollectionViewScrollDirectionHorizontal) ? ASScrollDirectionHorizontalDirections : ASScrollDirectionVerticalDirections;
 }
 
 - (void)layoutSubviews
@@ -1815,7 +1674,6 @@ static NSString * const kReuseIdentifier = @"_ASCollectionReuseIdentifier";
 
 - (ASCellNodeBlock)dataController:(ASDataController *)dataController nodeBlockAtIndexPath:(NSIndexPath *)indexPath
 {
-  ASDisplayNodeAssertMainThread();
   ASCellNodeBlock block = nil;
   ASCellNode *cell = nil;
 
@@ -1843,7 +1701,14 @@ static NSString * const kReuseIdentifier = @"_ASCollectionReuseIdentifier";
 
   if (block == nil) {
     if (_asyncDataSourceFlags.interop) {
-      CGSize preferredSize = [self _sizeForUIKitCellWithKind:nil atIndexPath:indexPath];
+      UICollectionViewLayout *layout = self.collectionViewLayout;
+      CGSize preferredSize = CGSizeZero;
+      SEL sizeForItem = @selector(collectionView:layout:sizeForItemAtIndexPath:);
+      if ([_asyncDelegate respondsToSelector:sizeForItem]) {
+        preferredSize = [(id)_asyncDelegate collectionView:self layout:layout sizeForItemAtIndexPath:indexPath];
+      } else {
+        preferredSize = ASFlowLayoutDefault(layout, itemSize, CGSizeZero);
+      }
       block = ^{
         ASCellNode *node = [[ASCellNode alloc] init];
         node.shouldUseUIKitCell = YES;
@@ -1919,7 +1784,6 @@ static NSString * const kReuseIdentifier = @"_ASCollectionReuseIdentifier";
 
 - (ASCellNodeBlock)dataController:(ASDataController *)dataController supplementaryNodeBlockOfKind:(NSString *)kind atIndexPath:(NSIndexPath *)indexPath
 {
-  ASDisplayNodeAssertMainThread();
   ASCellNodeBlock nodeBlock = nil;
   ASCellNode *node = nil;
   if (_asyncDataSourceFlags.collectionNodeNodeBlockForSupplementaryElement) {
@@ -1939,12 +1803,27 @@ static NSString * const kReuseIdentifier = @"_ASCollectionReuseIdentifier";
     if (node) {
       nodeBlock = ^{ return node; };
     } else {
-      // In this case, the app code returned nil for the node and the nodeBlock.
-      // If the UIKit method is implemented, then we should use it. Otherwise the CGSizeZero default will cause UIKit to not show it.
+      BOOL useUIKitCell = _asyncDataSourceFlags.interop;
       CGSize preferredSize = CGSizeZero;
-      BOOL useUIKitCell = _asyncDataSourceFlags.interopViewForSupplementaryElement;
       if (useUIKitCell) {
-        preferredSize = [self _sizeForUIKitCellWithKind:kind atIndexPath:indexPath];
+        UICollectionViewLayout *layout = self.collectionViewLayout;
+        if ([kind isEqualToString:UICollectionElementKindSectionHeader]) {
+          SEL sizeForHeader = @selector(collectionView:layout:referenceSizeForHeaderInSection:);
+          if ([_asyncDelegate respondsToSelector:sizeForHeader]) {
+            preferredSize = [(id)_asyncDelegate collectionView:self layout:layout
+                               referenceSizeForHeaderInSection:indexPath.section];
+          } else {
+            preferredSize = ASFlowLayoutDefault(layout, headerReferenceSize, CGSizeZero);
+          }
+        } else if ([kind isEqualToString:UICollectionElementKindSectionFooter]) {
+          SEL sizeForFooter = @selector(collectionView:layout:referenceSizeForFooterInSection:);
+          if ([_asyncDelegate respondsToSelector:sizeForFooter]) {
+            preferredSize = [(id)_asyncDelegate collectionView:self layout:layout
+                               referenceSizeForFooterInSection:indexPath.section];
+          } else {
+            preferredSize = ASFlowLayoutDefault(layout, footerReferenceSize, CGSizeZero);
+          }
+        }
       }
       nodeBlock = ^{
         ASCellNode *node = [[ASCellNode alloc] init];
@@ -2026,6 +1905,28 @@ static NSString * const kReuseIdentifier = @"_ASCollectionReuseIdentifier";
   return _rangeController;
 }
 
+/// The UIKit version of this method is only available on iOS >= 9
+- (NSArray<NSIndexPath *> *)asdk_indexPathsForVisibleSupplementaryElementsOfKind:(NSString *)kind
+{
+  if (NSFoundationVersionNumber >= NSFoundationVersionNumber_iOS_9_0) {
+    return [self indexPathsForVisibleSupplementaryElementsOfKind:kind];
+  }
+
+  // iOS 8 workaround
+  // We cannot use willDisplaySupplementaryView/didEndDisplayingSupplementaryView
+  // because those methods send index paths for _deleted items_ (invalid index paths)
+  [self layoutIfNeeded];
+  NSArray<UICollectionViewLayoutAttributes *> *visibleAttributes = [self.collectionViewLayout layoutAttributesForElementsInRect:self.bounds];
+  NSMutableArray *result = [NSMutableArray array];
+  for (UICollectionViewLayoutAttributes *attributes in visibleAttributes) {
+    if (attributes.representedElementCategory == UICollectionElementCategorySupplementaryView
+        && [attributes.representedElementKind isEqualToString:kind]) {
+      [result addObject:attributes.indexPath];
+    }
+  }
+  return result;
+}
+
 - (NSHashTable<ASCollectionElement *> *)visibleElementsForRangeController:(ASRangeController *)rangeController
 {
   return ASPointerTableByFlatMapping(_visibleElements, id element, element);
@@ -2056,7 +1957,7 @@ static NSString * const kReuseIdentifier = @"_ASCollectionReuseIdentifier";
 - (void)rangeController:(ASRangeController *)rangeController updateWithChangeSet:(_ASHierarchyChangeSet *)changeSet updates:(dispatch_block_t)updates
 {
   ASDisplayNodeAssertMainThread();
-  if (!self.asyncDataSource || _superIsPendingDataLoad || _updatingInResponseToInteractiveMove) {
+  if (!self.asyncDataSource || _superIsPendingDataLoad) {
     updates();
     [changeSet executeCompletionHandlerWithFinished:NO];
     return; // if the asyncDataSource has become invalid while we are processing, ignore this request to avoid crashes
@@ -2270,17 +2171,18 @@ static NSString * const kReuseIdentifier = @"_ASCollectionReuseIdentifier";
  */
 - (void)layer:(CALayer *)layer didChangeBoundsWithOldValue:(CGRect)oldBounds newValue:(CGRect)newBounds
 {
-  CGSize newSize = newBounds.size;
+  if (_hasDataControllerLayoutDelegate) {
+    // Let the layout delegate handle bounds changes if it's available.
+    return;
+  }
+  if (self.collectionViewLayout == nil) {
+    return;
+  }
   CGSize lastUsedSize = _lastBoundsSizeUsedForMeasuringNodes;
-  if (CGSizeEqualToSize(lastUsedSize, newSize)) {
+  if (CGSizeEqualToSize(lastUsedSize, newBounds.size)) {
     return;
   }
-  if (_hasDataControllerLayoutDelegate || self.collectionViewLayout == nil) {
-    // Let the layout delegate handle bounds changes if it's available. If no layout, it will init in the new state.
-    return;
-  }
-
-  _lastBoundsSizeUsedForMeasuringNodes = newSize;
+  _lastBoundsSizeUsedForMeasuringNodes = newBounds.size;
 
   // Laying out all nodes is expensive.
   // We only need to do this if the bounds changed in the non-scrollable direction.
@@ -2288,14 +2190,16 @@ static NSString * const kReuseIdentifier = @"_ASCollectionReuseIdentifier";
   // appearance update, we do not need to relayout all nodes.
   // For a more permanent fix to the unsafety mentioned above, see https://github.com/facebook/AsyncDisplayKit/pull/2182
   ASScrollDirection scrollDirection = self.scrollableDirections;
-  BOOL fixedVertically   = (ASScrollDirectionContainsVerticalDirection  (scrollDirection) == NO);
+  BOOL fixedVertically = (ASScrollDirectionContainsVerticalDirection(scrollDirection) == NO);
   BOOL fixedHorizontally = (ASScrollDirectionContainsHorizontalDirection(scrollDirection) == NO);
 
-  BOOL changedInNonScrollingDirection = (fixedHorizontally && newSize.width  != lastUsedSize.width) ||
-                                        (fixedVertically   && newSize.height != lastUsedSize.height);
+  BOOL changedInNonScrollingDirection = (fixedHorizontally && newBounds.size.width != lastUsedSize.width) || (fixedVertically && newBounds.size.height != lastUsedSize.height);
 
   if (changedInNonScrollingDirection) {
-    [self relayoutItems];
+    [_dataController relayoutAllNodes];
+    [_dataController waitUntilAllUpdatesAreCommitted];
+    // We need to ensure the size requery is done before we update our layout.
+    [self.collectionViewLayout invalidateLayout];
   }
 }
 
@@ -2310,5 +2214,22 @@ static NSString * const kReuseIdentifier = @"_ASCollectionReuseIdentifier";
 {
   return;
 }
+
+#if ASDISPLAYNODE_ASSERTIONS_ENABLED // Remove implementations entirely for efficiency if not asserting.
+
+// intercepted due to not being supported by ASCollectionView (prevent bugs caused by usage)
+
+- (BOOL)collectionView:(UICollectionView *)collectionView canMoveItemAtIndexPath:(NSIndexPath *)indexPath NS_AVAILABLE_IOS(9_0)
+{
+  ASDisplayNodeAssert(![self.asyncDataSource respondsToSelector:_cmd], @"%@ is not supported by ASCollectionView - please remove or disable this data source method.", NSStringFromSelector(_cmd));
+  return NO;
+}
+
+- (void)collectionView:(UICollectionView *)collectionView moveItemAtIndexPath:(NSIndexPath *)sourceIndexPath toIndexPath:(NSIndexPath*)destinationIndexPath NS_AVAILABLE_IOS(9_0)
+{
+  ASDisplayNodeAssert(![self.asyncDataSource respondsToSelector:_cmd], @"%@ is not supported by ASCollectionView - please remove or disable this data source method.", NSStringFromSelector(_cmd));
+}
+
+#endif
 
 @end

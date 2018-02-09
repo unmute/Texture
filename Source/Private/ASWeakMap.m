@@ -18,13 +18,12 @@
 #import <AsyncDisplayKit/ASWeakMap.h>
 
 @interface ASWeakMapEntry ()
-@property (nonatomic, strong, readonly) id key;
-@property (atomic, strong) id value;
+@property (nonatomic, strong) NSObject *key;
 @end
 
 @implementation ASWeakMapEntry
 
-- (instancetype)initWithKey:(id)key value:(id)value
+- (instancetype)initWithKey:(NSObject *)key value:(NSObject *)value
 {
   self = [super init];
   if (self) {
@@ -34,11 +33,16 @@
   return self;
 }
 
+- (void)setValue:(NSObject *)value
+{
+  _value = value;
+}
+
 @end
 
 
 @interface ASWeakMap ()
-@property (nonatomic, strong, readonly) NSMapTable<id, ASWeakMapEntry *> *hashTable;
+@property (nonatomic, strong) NSMapTable<NSObject *, ASWeakMapEntry *> *hashTable;
 @end
 
 /**
@@ -65,12 +69,12 @@
   return self;
 }
 
-- (ASWeakMapEntry *)entryForKey:(id)key
+- (ASWeakMapEntry *)entryForKey:(NSObject *)key
 {
   return [self.hashTable objectForKey:key];
 }
 
-- (ASWeakMapEntry *)setObject:(id)value forKey:(id)key
+- (ASWeakMapEntry *)setObject:(NSObject *)value forKey:(NSObject *)key
 {
   ASWeakMapEntry *entry = [self.hashTable objectForKey:key];
   if (entry != nil) {

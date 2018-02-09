@@ -49,7 +49,6 @@
 @property (nonatomic, assign) BOOL usesSynchronousDataLoading;
 @property (nonatomic, assign) CGFloat leadingScreensForBatching;
 @property (weak, nonatomic) id <ASCollectionViewLayoutInspecting> layoutInspector;
-@property (nonatomic, assign) UIEdgeInsets contentInset;
 @property (nonatomic, assign) CGPoint contentOffset;
 @property (nonatomic, assign) BOOL animatesContentOffset;
 @end
@@ -64,7 +63,6 @@
     _allowsSelection = YES;
     _allowsMultipleSelection = NO;
     _inverted = NO;
-    _contentInset = UIEdgeInsetsZero;
     _contentOffset = CGPointZero;
     _animatesContentOffset = NO;
   }
@@ -183,7 +181,6 @@
   
   if (_pendingState) {
     _ASCollectionPendingState *pendingState = _pendingState;
-    self.pendingState               = nil;
     view.asyncDelegate              = pendingState.delegate;
     view.asyncDataSource            = pendingState.dataSource;
     view.inverted                   = pendingState.inverted;
@@ -191,7 +188,7 @@
     view.allowsMultipleSelection    = pendingState.allowsMultipleSelection;
     view.usesSynchronousDataLoading = pendingState.usesSynchronousDataLoading;
     view.layoutInspector            = pendingState.layoutInspector;
-    view.contentInset               = pendingState.contentInset;
+    self.pendingState               = nil;
     
     if (pendingState.rangeMode != ASLayoutRangeModeUnspecified) {
       [view.rangeController updateCurrentRangeWithMode:pendingState.rangeMode];
@@ -443,25 +440,6 @@
   }
 }
 
-- (void)setContentInset:(UIEdgeInsets)contentInset
-{
-  if ([self pendingState]) {
-    _pendingState.contentInset = contentInset;
-  } else {
-    ASDisplayNodeAssert([self isNodeLoaded], @"ASCollectionNode should be loaded if pendingState doesn't exist");
-    self.view.contentInset = contentInset;
-  }
-}
-
-- (UIEdgeInsets)contentInset
-{
-  if ([self pendingState]) {
-    return _pendingState.contentInset;
-  } else {
-    return self.view.contentInset;
-  }
-}
-
 - (void)setContentOffset:(CGPoint)contentOffset
 {
   [self setContentOffset:contentOffset animated:NO];
@@ -473,7 +451,6 @@
     _pendingState.contentOffset = contentOffset;
     _pendingState.animatesContentOffset = animated;
   } else {
-    ASDisplayNodeAssert([self isNodeLoaded], @"ASCollectionNode should be loaded if pendingState doesn't exist");
     [self.view setContentOffset:contentOffset animated:animated];
   }
 }
@@ -728,31 +705,12 @@
   [self performBatchAnimated:UIView.areAnimationsEnabled updates:updates completion:completion];
 }
 
-- (BOOL)isProcessingUpdates
-{
-  return (self.nodeLoaded ? [self.view isProcessingUpdates] : NO);
-}
-
-- (void)onDidFinishProcessingUpdates:(nullable void (^)())completion
-{
-  if (!self.nodeLoaded) {
-    completion();
-  } else {
-    [self.view onDidFinishProcessingUpdates:completion];
-  }
-}
-
-- (void)waitUntilAllUpdatesAreProcessed
+- (void)waitUntilAllUpdatesAreCommitted
 {
   ASDisplayNodeAssertMainThread();
   if (self.nodeLoaded) {
     [self.view waitUntilAllUpdatesAreCommitted];
   }
-}
-
-- (void)waitUntilAllUpdatesAreCommitted
-{
-  [self waitUntilAllUpdatesAreProcessed];
 }
 
 - (void)reloadDataWithCompletion:(void (^)())completion
@@ -774,6 +732,13 @@
 - (void)reloadData
 {
   [self reloadDataWithCompletion:nil];
+}
+
+- (void)reloadDataImmediately
+{
+  ASDisplayNodeAssertMainThread();
+  [self reloadData];
+  [self waitUntilAllUpdatesAreCommitted];
 }
 
 - (void)relayoutItems
@@ -802,13 +767,6 @@
   ASDisplayNodeAssertMainThread();
   if (self.nodeLoaded) {
     [self.view endUpdatesAnimated:animated completion:completion];
-  }
-}
-
-- (void)invalidateFlowLayoutDelegateMetrics {
-  ASDisplayNodeAssertMainThread();
-  if (self.nodeLoaded) {
-    [self.view invalidateFlowLayoutDelegateMetrics];
   }
 }
 

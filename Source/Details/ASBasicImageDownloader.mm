@@ -46,12 +46,11 @@ NSString * const kASBasicImageDownloaderContextCompletionBlock = @"kASBasicImage
 @implementation ASBasicImageDownloaderContext
 
 static NSMutableDictionary *currentRequests = nil;
-// Allocate currentRequestsLock on the heap to prevent destruction at app exit (https://github.com/TextureGroup/Texture/issues/136)
-static ASDN::StaticMutex& currentRequestsLock = *new ASDN::StaticMutex;
+static ASDN::RecursiveMutex currentRequestsLock;
 
 + (ASBasicImageDownloaderContext *)contextForURL:(NSURL *)URL
 {
-  ASDN::StaticMutexLocker l(currentRequestsLock);
+  ASDN::MutexLocker l(currentRequestsLock);
   if (!currentRequests) {
     currentRequests = [[NSMutableDictionary alloc] init];
   }
@@ -65,7 +64,7 @@ static ASDN::StaticMutex& currentRequestsLock = *new ASDN::StaticMutex;
 
 + (void)cancelContextWithURL:(NSURL *)URL
 {
-  ASDN::StaticMutexLocker l(currentRequestsLock);
+  ASDN::MutexLocker l(currentRequestsLock);
   if (currentRequests) {
     [currentRequests removeObjectForKey:URL];
   }
@@ -130,7 +129,7 @@ static ASDN::StaticMutex& currentRequestsLock = *new ASDN::StaticMutex;
 
     if (completionBlock) {
       dispatch_async(callbackQueue, ^{
-        completionBlock(image, error, nil, nil);
+        completionBlock(image, error, nil);
       });
     }
   }
@@ -206,7 +205,7 @@ static const char *kContextKey = NSStringFromClass(ASBasicImageDownloaderContext
 
 @implementation ASBasicImageDownloader
 
-+ (ASBasicImageDownloader *)sharedImageDownloader
++ (instancetype)sharedImageDownloader
 {
   static ASBasicImageDownloader *sharedImageDownloader = nil;
   static dispatch_once_t once = 0;
@@ -235,9 +234,9 @@ static const char *kContextKey = NSStringFromClass(ASBasicImageDownloaderContext
 #pragma mark ASImageDownloaderProtocol.
 
 - (id)downloadImageWithURL:(NSURL *)URL
-             callbackQueue:(dispatch_queue_t)callbackQueue
-          downloadProgress:(nullable ASImageDownloaderProgress)downloadProgress
-                completion:(ASImageDownloaderCompletion)completion
+                      callbackQueue:(dispatch_queue_t)callbackQueue
+                   downloadProgress:(nullable ASImageDownloaderProgress)downloadProgress
+                         completion:(ASImageDownloaderCompletion)completion
 {
   ASBasicImageDownloaderContext *context = [ASBasicImageDownloaderContext contextForURL:URL];
 

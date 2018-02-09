@@ -20,9 +20,8 @@
 #import <AsyncDisplayKit/_ASCoreAnimationExtras.h>
 #import <AsyncDisplayKit/_ASAsyncTransactionContainer.h>
 #import <AsyncDisplayKit/ASAssert.h>
-#import <AsyncDisplayKit/ASEqualityHelpers.h>
-#import <AsyncDisplayKit/ASDisplayNodeInternal.h>
 #import <AsyncDisplayKit/ASInternalHelpers.h>
+#import <AsyncDisplayKit/ASDisplayNodeInternal.h>
 
 #define __shouldSetNeedsDisplay(layer) (flags.needsDisplay \
   || (flags.setOpaque && opaque != (layer).opaque)\
@@ -74,11 +73,8 @@ typedef struct {
   int setEdgeAntialiasingMask:1;
   int setIsAccessibilityElement:1;
   int setAccessibilityLabel:1;
-  int setAccessibilityAttributedLabel:1;
   int setAccessibilityHint:1;
-  int setAccessibilityAttributedHint:1;
   int setAccessibilityValue:1;
-  int setAccessibilityAttributedValue:1;
   int setAccessibilityTraits:1;
   int setAccessibilityFrame:1;
   int setAccessibilityLanguage:1;
@@ -125,11 +121,8 @@ typedef struct {
   BOOL asyncTransactionContainer;
   BOOL isAccessibilityElement;
   NSString *accessibilityLabel;
-  NSAttributedString *accessibilityAttributedLabel;
   NSString *accessibilityHint;
-  NSAttributedString *accessibilityAttributedHint;
   NSString *accessibilityValue;
-  NSAttributedString *accessibilityAttributedValue;
   UIAccessibilityTraits accessibilityTraits;
   CGRect accessibilityFrame;
   NSString *accessibilityLanguage;
@@ -141,7 +134,7 @@ typedef struct {
   NSArray *accessibilityHeaderElements;
   CGPoint accessibilityActivationPoint;
   UIBezierPath *accessibilityPath;
-  UISemanticContentAttribute semanticContentAttribute API_AVAILABLE(ios(9.0), tvos(9.0));
+  UISemanticContentAttribute semanticContentAttribute;
 
   ASPendingStateFlags _flags;
 }
@@ -278,11 +271,8 @@ static BOOL defaultAllowsEdgeAntialiasing = NO;
   borderColor = blackColorRef;
   isAccessibilityElement = NO;
   accessibilityLabel = nil;
-  accessibilityAttributedLabel = nil;
   accessibilityHint = nil;
-  accessibilityAttributedHint = nil;
   accessibilityValue = nil;
-  accessibilityAttributedValue = nil;
   accessibilityTraits = UIAccessibilityTraitNone;
   accessibilityFrame = CGRectZero;
   accessibilityLanguage = nil;
@@ -573,7 +563,7 @@ static BOOL defaultAllowsEdgeAntialiasing = NO;
   _flags.setAsyncTransactionContainer = YES;
 }
 
-- (void)setSemanticContentAttribute:(UISemanticContentAttribute)attribute API_AVAILABLE(ios(9.0), tvos(9.0)) {
+- (void)setSemanticContentAttribute:(UISemanticContentAttribute)attribute {
   semanticContentAttribute = attribute;
   _flags.setSemanticContentAttribute = YES;
 }
@@ -596,26 +586,9 @@ static BOOL defaultAllowsEdgeAntialiasing = NO;
 
 - (void)setAccessibilityLabel:(NSString *)newAccessibilityLabel
 {
-  if (! ASObjectIsEqual(accessibilityLabel, newAccessibilityLabel)) {
-    _flags.setAccessibilityLabel = YES;
-    _flags.setAccessibilityAttributedLabel = YES;
-    accessibilityLabel = newAccessibilityLabel ? [newAccessibilityLabel copy] : nil;
-    accessibilityAttributedLabel = newAccessibilityLabel ? [[NSAttributedString alloc] initWithString:newAccessibilityLabel] : nil;
-  }
-}
-
-- (NSAttributedString *)accessibilityAttributedLabel
-{
-  return accessibilityAttributedLabel;
-}
-
-- (void)setAccessibilityAttributedLabel:(NSAttributedString *)newAccessibilityAttributedLabel
-{
-  if (! ASObjectIsEqual(accessibilityAttributedLabel, newAccessibilityAttributedLabel)) {
-    _flags.setAccessibilityAttributedLabel = YES;
-    _flags.setAccessibilityLabel = YES;
-    accessibilityAttributedLabel = newAccessibilityAttributedLabel ? [newAccessibilityAttributedLabel copy] : nil;
-    accessibilityLabel = newAccessibilityAttributedLabel ? [newAccessibilityAttributedLabel.string copy] : nil;
+  _flags.setAccessibilityLabel = YES;
+  if (accessibilityLabel != newAccessibilityLabel) {
+    accessibilityLabel = [newAccessibilityLabel copy];
   }
 }
 
@@ -626,27 +599,8 @@ static BOOL defaultAllowsEdgeAntialiasing = NO;
 
 - (void)setAccessibilityHint:(NSString *)newAccessibilityHint
 {
-  if (! ASObjectIsEqual(accessibilityHint, newAccessibilityHint)) {
-    _flags.setAccessibilityHint = YES;
-    _flags.setAccessibilityAttributedHint = YES;
-    accessibilityHint = newAccessibilityHint ? [newAccessibilityHint copy] : nil;
-    accessibilityAttributedHint = newAccessibilityHint ? [[NSAttributedString alloc] initWithString:newAccessibilityHint] : nil;
-  }
-}
-
-- (NSAttributedString *)accessibilityAttributedHint
-{
-  return accessibilityAttributedHint;
-}
-
-- (void)setAccessibilityAttributedHint:(NSAttributedString *)newAccessibilityAttributedHint
-{
-  if (! ASObjectIsEqual(accessibilityAttributedHint, newAccessibilityAttributedHint)) {
-    _flags.setAccessibilityAttributedHint = YES;
-    _flags.setAccessibilityHint = YES;
-    accessibilityAttributedHint = newAccessibilityAttributedHint ? [newAccessibilityAttributedHint copy] : nil;
-    accessibilityHint = newAccessibilityAttributedHint ? [newAccessibilityAttributedHint.string copy] : nil;
-  }
+  _flags.setAccessibilityHint = YES;
+  accessibilityHint = [newAccessibilityHint copy];
 }
 
 - (NSString *)accessibilityValue
@@ -656,27 +610,8 @@ static BOOL defaultAllowsEdgeAntialiasing = NO;
 
 - (void)setAccessibilityValue:(NSString *)newAccessibilityValue
 {
-  if (! ASObjectIsEqual(accessibilityValue, newAccessibilityValue)) {
-    _flags.setAccessibilityValue = YES;
-    _flags.setAccessibilityAttributedValue = YES;
-    accessibilityValue = newAccessibilityValue ? [newAccessibilityValue copy] : nil;
-    accessibilityAttributedValue = newAccessibilityValue ? [[NSAttributedString alloc] initWithString:newAccessibilityValue] : nil;
-  }
-}
-
-- (NSAttributedString *)accessibilityAttributedValue
-{
-  return accessibilityAttributedValue;
-}
-
-- (void)setAccessibilityAttributedValue:(NSAttributedString *)newAccessibilityAttributedValue
-{
-  if (! ASObjectIsEqual(accessibilityAttributedValue, newAccessibilityAttributedValue)) {
-    _flags.setAccessibilityAttributedValue = YES;
-    _flags.setAccessibilityValue = YES;
-    accessibilityAttributedValue = newAccessibilityAttributedValue?  [newAccessibilityAttributedValue copy] : nil;
-    accessibilityValue = newAccessibilityAttributedValue ? [newAccessibilityAttributedValue.string copy] : nil;
-  }
+  _flags.setAccessibilityValue = YES;
+  accessibilityValue = [newAccessibilityValue copy];
 }
 
 - (UIAccessibilityTraits)accessibilityTraits
@@ -1059,20 +994,11 @@ static BOOL defaultAllowsEdgeAntialiasing = NO;
   if (flags.setAccessibilityLabel)
     view.accessibilityLabel = accessibilityLabel;
 
-  if (AS_AT_LEAST_IOS11 && flags.setAccessibilityAttributedLabel)
-    [view setValue:accessibilityAttributedLabel forKey:@"accessibilityAttributedLabel"];
-
   if (flags.setAccessibilityHint)
     view.accessibilityHint = accessibilityHint;
 
-  if (AS_AT_LEAST_IOS11 && flags.setAccessibilityAttributedHint)
-    [view setValue:accessibilityAttributedHint forKey:@"accessibilityAttributedHint"];
-
   if (flags.setAccessibilityValue)
     view.accessibilityValue = accessibilityValue;
-
-  if (AS_AT_LEAST_IOS11 && flags.setAccessibilityAttributedValue)
-    [view setValue:accessibilityAttributedValue forKey:@"accessibilityAttributedValue"];
 
   if (flags.setAccessibilityTraits)
     view.accessibilityTraits = accessibilityTraits;
@@ -1216,13 +1142,6 @@ static BOOL defaultAllowsEdgeAntialiasing = NO;
   pendingState.accessibilityLabel = view.accessibilityLabel;
   pendingState.accessibilityHint = view.accessibilityHint;
   pendingState.accessibilityValue = view.accessibilityValue;
-#if __IPHONE_OS_VERSION_MAX_ALLOWED >= __IPHONE_11_0
-  if (AS_AVAILABLE_IOS(11)) {
-    pendingState.accessibilityAttributedLabel = view.accessibilityAttributedLabel;
-    pendingState.accessibilityAttributedHint = view.accessibilityAttributedHint;
-    pendingState.accessibilityAttributedValue = view.accessibilityAttributedValue;
-  }
-#endif
   pendingState.accessibilityTraits = view.accessibilityTraits;
   pendingState.accessibilityFrame = view.accessibilityFrame;
   pendingState.accessibilityLanguage = view.accessibilityLanguage;
@@ -1300,11 +1219,8 @@ static BOOL defaultAllowsEdgeAntialiasing = NO;
   || flags.setSemanticContentAttribute
   || flags.setIsAccessibilityElement
   || flags.setAccessibilityLabel
-  || flags.setAccessibilityAttributedLabel
   || flags.setAccessibilityHint
-  || flags.setAccessibilityAttributedHint
   || flags.setAccessibilityValue
-  || flags.setAccessibilityAttributedValue
   || flags.setAccessibilityTraits
   || flags.setAccessibilityFrame
   || flags.setAccessibilityLanguage
